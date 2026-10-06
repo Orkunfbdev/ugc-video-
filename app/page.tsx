@@ -3,11 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowRight, Check, ChevronRight, CircleHelp, ImagePlus, LoaderCircle, Mic2, Play, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { creators } from "@/lib/creators";
+import { wordCount } from "@/lib/storyboard";
 
 type Job = {
   id: string;
   creatorId: string;
   script: string;
+  kind: string;
+  duration: number;
+  sceneIndex?: number;
   stage: string;
   videoUrl: string | null;
   error: string | null;
@@ -21,6 +25,14 @@ const stageText: Record<string, string> = {
   product_submitting: "Sahneler birleştiriliyor",
   merge_queued: "Sahneler birleştiriliyor",
   merge_submitting: "Video tamamlanıyor",
+  frame_queued: "Sahne görseli hazırlanıyor",
+  frame_submitting: "Sahne videosu başlatılıyor",
+  scene_queued: "Sahne videosu oluşturuluyor",
+  scene_submitting: "Sonraki sahne hazırlanıyor",
+  tts_queued: "Türkçe dış ses hazırlanıyor",
+  tts_submitting: "Sahneler birleştiriliyor",
+  audio_merge_queued: "Dış ses videoya ekleniyor",
+  audio_merge_submitting: "Video tamamlanıyor",
   complete: "Video hazır",
   failed: "Üretim tamamlanamadı",
 };
@@ -58,6 +70,8 @@ export default function Home() {
   const [creatorImage, setCreatorImage] = useState<File | null>(null);
   const [creatorPreview, setCreatorPreview] = useState("");
   const [script, setScript] = useState("");
+  const [kind, setKind] = useState<"talking" | "storyboard">("talking");
+  const [duration, setDuration] = useState<10 | 20 | 30>(20);
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -133,13 +147,16 @@ export default function Home() {
     setWarning("");
     if (!product) { setError("Önce ürün fotoğrafını yükleyin."); return; }
     if (creatorMode === "custom" && !creatorImage) { setError("Kendi modeliniz için kişi fotoğrafını yükleyin."); return; }
-    if (script.trim().length < 12) { setError("Modelin söyleyeceği metni yazın (en az 12 karakter)."); return; }
+    if (script.trim().length < 12) { setError("Video metnini yazın (en az 12 karakter)."); return; }
+    if (kind === "talking" && wordCount(script) > Math.floor(duration * 2.5)) { setError(`${duration} saniyelik hedefe en fazla ${Math.floor(duration * 2.5)} kelime önerilir.`); return; }
     setSubmitting(true);
     try {
       const form = new FormData();
-      form.set("productImage", await productCard(product));
+      form.set("productImage", kind === "storyboard" ? product : await productCard(product));
       form.set("creatorId", creatorMode === "custom" ? "custom" : creatorId);
       form.set("script", script.trim());
+      form.set("kind", kind);
+      form.set("duration", String(duration));
       if (creatorMode === "custom" && creatorImage) form.set("creatorImage", creatorImage);
       if (creatorMode === "ready" && creatorId === "featured") {
         const response = await fetch("/models/featured.jpg");
@@ -151,7 +168,7 @@ export default function Home() {
       if (response.status === 401) setNeedsLogin(true);
       if (!response.ok) throw new Error(data.error ?? "Üretim başlatılamadı.");
       if (!data.job) throw new Error("Üretim isteği doğrulanamadı.");
-      const nextJob = { id: data.job.id, creatorId: creatorMode === "custom" ? "custom" : creatorId, script, stage: data.job.stage, videoUrl: null, error: null, createdAt: new Date().toISOString() };
+      const nextJob = { id: data.job.id, creatorId: creatorMode === "custom" ? "custom" : creatorId, script, kind, duration, stage: data.job.stage, videoUrl: null, error: null, createdAt: new Date().toISOString() };
       setCurrentJob(nextJob);
       setJobs((previous) => [nextJob, ...previous]);
     } catch (cause) {
@@ -163,6 +180,12 @@ export default function Home() {
 
   const selectedCreator = creators.find((creator) => creator.id === creatorId);
   const active = currentJob && !["complete", "failed"].includes(currentJob.stage);
+  const isArgil = creatorMode === "ready" && selectedCreator?.kind === "argil";
+  const sceneCount = Math.min(3, Math.max(2, script.match(/^\s*Sahne\s+\d+/gim)?.length ?? (duration === 10 ? 2 : 3)));
+  const priceCents = (seconds: number) => kind === "storyboard"
+    ? seconds * 8.4 + (script ? sceneCount : seconds === 10 ? 2 : 3) * 3.9 + seconds * 0.14
+    : seconds * (isArgil ? 2.25 : 10);
+  const cents = (amount: number) => `${new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 1 }).format(amount)} ¢`;
 
   return (
     <div className="app-shell">
@@ -175,7 +198,7 @@ export default function Home() {
         <div className="page-heading">
           <div>
             <h1>Ürününü videoda anlat.</h1>
-            <p>Ürünü ekle, modeli seç ve söylemesini istediğin metni yaz. Geri kalanını stüdyo halleder.</p>
+            <p>Ürünü ekle, modeli seç, konuşma ya da sahne metnini yaz. Videonu burada oluştur.</p>
           </div>
           <span className="format-pill"><Play size={13} fill="currentColor" /> Dikey video · 9:16</span>
         </div>
@@ -197,7 +220,7 @@ export default function Home() {
                 <button type="button" role="tab" aria-selected={creatorMode === "custom"} className={creatorMode === "custom" ? "selected" : ""} onClick={() => setCreatorMode("custom")}><UploadCloud size={17} /> Kendi fotoğrafım</button>
               </div>
               {creatorMode === "ready" ? <div className="creator-grid">
-                {creators.map((creator) => <button type="button" key={creator.id} className={`creator-card ${creatorId === creator.id ? "chosen" : ""}`} onClick={() => setCreatorId(creator.id)} aria-pressed={creatorId === creator.id}>
+                {creators.map((creator) => <button type="button" key={creator.id} disabled={kind === "storyboard" && creator.kind === "argil"} className={`creator-card ${creatorId === creator.id ? "chosen" : ""}`} onClick={() => setCreatorId(creator.id)} aria-pressed={creatorId === creator.id}>
                   <span className={`creator-thumb creator-${creator.id}`}>{"image" in creator ? <img src={creator.image} alt="" /> : <span>{creator.name.slice(0, 1)}</span>}</span>
                   <span className="creator-meta"><strong>{creator.name}</strong><small>{creator.description}</small></span>
                   <span className="creator-check">{creatorId === creator.id ? <Check size={14} /> : <Plus size={13} />}</span>
@@ -210,13 +233,29 @@ export default function Home() {
                 </button>
                 <p className="hint"><CircleHelp size={15} /> Bu fotoğraf videoda konuşan kişiye dönüşür. Ürün fotoğrafı ayrı kullanılır.</p>
               </div>}
+              {kind === "storyboard" && <p className="hint"><CircleHelp size={15} /> Sahneli reklam için fotoğraflı model gerekir; Argil hazır avatarları konuşma modunda kullanılabilir.</p>}
             </div>
 
             <div className="form-section script-section">
-              <div className="section-title"><span className="step">3</span><div><h2>Model ne söylesin?</h2><p>Yazdığın metin videoda konuşma olarak kullanılacak.</p></div></div>
-              <label htmlFor="script" className="field-label">Konuşma metni</label>
-              <textarea id="script" maxLength={500} value={script} onChange={(event) => setScript(event.target.value)} placeholder="Örneğin: Bu ürünü son birkaç haftadır kullanıyorum. En sevdiğim yanı..." />
-              <div className="textarea-footer"><span><Mic2 size={15} /> Türkçe metin yazabilirsin</span><span>{script.length}/500</span></div>
+              <div className="section-title"><span className="step">3</span><div><h2>Video biçimi ve metni</h2><p>Kısa konuşma veya sahne sahne ürün reklamı oluştur.</p></div></div>
+              <div className="mode-tabs" role="tablist" aria-label="Video biçimi">
+                <button type="button" role="tab" aria-selected={kind === "talking"} className={kind === "talking" ? "selected" : ""} onClick={() => setKind("talking")}><Mic2 size={17} /> Konuşan model</button>
+                <button type="button" role="tab" aria-selected={kind === "storyboard"} className={kind === "storyboard" ? "selected" : ""} onClick={() => { setKind("storyboard"); if (isArgil) setCreatorId("featured"); }}><Play size={16} /> Sahneli reklam</button>
+              </div>
+              <label htmlFor="script" className="field-label">{kind === "storyboard" ? "Sahne tarifleri ve konuşma metni" : "Konuşma metni"}</label>
+              <textarea id="script" className={kind === "storyboard" ? "storyboard-textarea" : ""} maxLength={kind === "storyboard" ? 5000 : 500} value={script} onChange={(event) => setScript(event.target.value)} placeholder={kind === "storyboard" ? "Sahne 1: Kanca (0 - 7. saniye)\nPrompt: Model kameraya bakar ve ürünü gösterir...\n\nSahne 2: Ürün kullanımı (7 - 14. saniye)\nPrompt: Ürünün yakın çekimi...\n\nSahne 3: Kapanış (14 - 20. saniye)\nPrompt: Model ürünle gülümser, sakin kapanış...\n\nKonuşma Metni\n(0-7. saniye): \"...\"\n(7-14. saniye): \"...\"\n(14-20. saniye): \"...\"" : "Örneğin: Bu ürünü son birkaç haftadır kullanıyorum. En sevdiğim yanı..."} />
+              <div className="textarea-footer"><span><Mic2 size={15} /> {kind === "storyboard" ? "2–3 sahne; Konuşma Metni başlığıyla Türkçe dış sesi ekle" : "Türkçe metin yazabilirsin"}</span><span>{script.length}/{kind === "storyboard" ? 5000 : 500}</span></div>
+              {kind === "storyboard" && <p className="hint">Örneğindeki “Sahne 1 / Prompt / Konuşma Metni” düzenini doğrudan yapıştırabilirsin. Son sahne sakin bir ürün kapanışıyla biter. Dış ses, sahnelerle yaklaşık eşleşir; dudak senkronu bu modda yoktur.</p>}
+            </div>
+
+            <div className="form-section duration-section">
+              <div className="section-title"><span className="step">4</span><div><h2>Süre ve Fal maliyeti</h2><p>Bu rakamlar satış fiyatı değil, Fal üretim tahminidir.</p></div></div>
+              <div className="duration-options" role="group" aria-label="Hedef video süresi">
+                {([10, 20, 30] as const).map((seconds) => <button type="button" key={seconds} className={duration === seconds ? "selected" : ""} aria-pressed={duration === seconds} onClick={() => setDuration(seconds)}><strong>{seconds} sn</strong><span>≈ {cents(priceCents(seconds))}</span></button>)}
+              </div>
+              <div className="cost-detail"><strong>Seçilen: yaklaşık {cents(priceCents(duration))}</strong><span>{kind === "storyboard" ? `Kling ${cents(duration * 8.4)} + ${sceneCount} sahne görseli ${cents(sceneCount * 3.9)} + tahmini dış ses ${cents(duration * 0.14)}` : isArgil ? `Argil liste fiyatı: 2,25 ¢ / üretilen saniye` : `HeyGen liste fiyatı: 10 ¢ / üretilen saniye`}</span></div>
+              <p className="cost-disclaimer">ABD senti. Gerçek tutar üretilen süreye, dış sesin karakter sayısına ve Fal medya birleştirme işlemlerine göre değişebilir. Konuşan modelde süre hedeftir; sahneli modda klip süreleri seçime göre ayarlanır.</p>
+              <details className="pricing-methods"><summary>Tüm yöntemlerin maliyetini ve kaynaklarını gör</summary><div className="pricing-scroll"><table><thead><tr><th>Yöntem</th><th>10 sn</th><th>20 sn</th><th>30 sn</th></tr></thead><tbody><tr><th><a href="https://fal.ai/models/argil/avatars/text-to-video" target="_blank" rel="noreferrer">Argil</a></th><td>22,5 ¢</td><td>45 ¢</td><td>67,5 ¢</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/heygen/avatar4/image-to-video" target="_blank" rel="noreferrer">Fotoğraf modeli</a></th><td>100 ¢</td><td>200 ¢</td><td>300 ¢</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/kling-video/v3/standard/image-to-video" target="_blank" rel="noreferrer">Sahneli reklam</a></th><td>≈ 93,2 ¢</td><td>≈ 182,5 ¢</td><td>≈ 267,9 ¢</td></tr></tbody></table></div><p>Sahneli tahmin: 10 sn için 2, 20/30 sn için 3 sahne; <a href="https://fal.ai/models/fal-ai/nano-banana/edit" target="_blank" rel="noreferrer">görsel</a> ve <a href="https://fal.ai/models/fal-ai/elevenlabs/tts/multilingual-v2" target="_blank" rel="noreferrer">dış ses</a> dahil. Birleştirme ücretleri hariçtir.</p></details>
             </div>
 
             {needsLogin && <div className="inline-error">Video üretmek için <a href="/signin-with-chatgpt?return_to=/" target="_top">oturum aç</a>.</div>}
@@ -225,13 +264,13 @@ export default function Home() {
           </section>
 
           <aside className="result-column" aria-label="Video sonucu">
-            <div className="result-header"><div><h2>Videon</h2><p>Sonuç burada görünecek.</p></div><span>9:16</span></div>
+            <div className="result-header"><div><h2>Videon</h2><p>{currentJob ? `${currentJob.duration} sn hedef · ${currentJob.kind === "storyboard" ? "Sahneli reklam" : "Konuşan model"}` : "Sonuç burada görünecek."}</p></div><span>9:16</span></div>
             <div className={`video-frame ${currentJob?.stage === "complete" ? "video-ready" : ""}`}>
               {currentJob?.stage === "complete" && currentJob.videoUrl ? <video key={currentJob.id} src={currentJob.videoUrl} controls playsInline poster={productPreview || undefined} /> : active ? <div className="frame-progress"><span className="progress-mark"><LoaderCircle size={28} className="spin" /></span><strong>{stageText[currentJob.stage] ?? "Video hazırlanıyor"}</strong><p>İşlem arka planda sürüyor. Bu sayfaya daha sonra dönebilirsin.</p><div className="progress-track"><span /></div></div> : currentJob?.stage === "failed" ? <div className="frame-progress failed"><X size={27} /><strong>Video oluşturulamadı</strong><p>{currentJob.error ?? "Yeniden deneyin."}</p></div> : <div className="frame-empty"><div className="frame-art"><div className="frame-person">{creatorMode === "ready" && selectedCreator && "image" in selectedCreator ? <img src={selectedCreator.image} alt="Seçilen model" /> : creatorMode === "custom" && creatorPreview ? <img src={creatorPreview} alt="Seçilen model" /> : <span>{selectedCreator?.name.slice(0, 1) ?? "M"}</span>}</div><div className="frame-product">{productPreview ? <img src={productPreview} alt="Seçilen ürün" /> : <ImagePlus size={22} />}</div></div><div className="frame-caption"><span className="frame-caption-line" /><span className="frame-caption-line short" /></div><span className="preview-label">ÖNİZLEME</span></div>}
             </div>
             {currentJob?.stage === "complete" && <a className="download-button" href={`/api/jobs/${currentJob.id}/video`}><ArrowDownToLine size={17} /> MP4 videoyu indir</a>}
             {warning && active && <p className="warning" role="status">{warning}</p>}
-            <div className="result-note"><span className="note-icon"><Check size={16} /></span><p>Ürün görseli videonun sonundaki ürün sahnesinde yer alır.</p></div>
+            <div className="result-note"><span className="note-icon"><Check size={16} /></span><p>{(currentJob?.kind ?? kind) === "storyboard" ? "Ürün, sahne görsellerinde referans alınır. Son sahne sakin kapanış için yönlendirilir; üretici modelin sonucu değişebilir." : "Ürün görseli videonun sonundaki ürün sahnesinde yer alır."}</p></div>
             {jobs.length > 0 && <div className="history"><h3>Son videolar</h3>{jobs.slice(0, 5).map((job) => <button type="button" className={`history-row ${currentJob?.id === job.id ? "active" : ""}`} key={job.id} onClick={() => setCurrentJob(job)}><span className="history-icon">{job.stage === "complete" ? <Play size={15} fill="currentColor" /> : job.stage === "failed" ? <X size={15} /> : <LoaderCircle size={15} className="spin" />}</span><span><strong>{job.stage === "complete" ? "UGC videosu" : stageText[job.stage] ?? "Video hazırlanıyor"}</strong><small>{formatDate(job.createdAt)}</small></span><ChevronRight size={16} /></button>)}</div>}
           </aside>
         </div>

@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { jobs } from "@/db/schema";
 import { getDb } from "@/db";
 import { falClient, publicError } from "@/lib/fal";
-import { MERGE_MODEL, PRODUCT_MODEL } from "@/lib/creators";
+import { AUDIO_MERGE_MODEL, FRAME_MODEL, MERGE_MODEL, PRODUCT_MODEL, SCENE_MODEL, TTS_MODEL } from "@/lib/creators";
+import type { Scene } from "@/lib/storyboard";
 
 type Job = typeof jobs.$inferSelect;
 
@@ -31,12 +32,59 @@ export async function advanceJob(job: Job): Promise<void> {
     moderation_error?: string;
   };
   const outputUrl = data.video?.url;
-  if (!outputUrl) throw new Error("Fal video adresi döndürmedi.");
+  const imageUrl = (result.data as { images?: { url?: string }[] }).images?.[0]?.url;
+  const audioUrl = (result.data as { audio?: { url?: string } }).audio?.url;
+  if (job.stage === "frame_queued" ? !imageUrl : job.stage === "tts_queued" ? !audioUrl : !outputUrl) {
+    await getDb().update(jobs).set({ stage: "failed", error: "Fal beklenen medya dosyasını döndürmedi.", updatedAt: now() })
+      .where(and(eq(jobs.id, job.id), eq(jobs.stage, job.stage)));
+    return;
+  }
 
   if (!(await claim(job, `${job.stage.replace("_queued", "")}_submitting`))) return;
   const db = getDb();
   try {
-    if (job.stage === "avatar_queued") {
+    if (job.stage === "frame_queued") {
+      const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
+      const scene = scenes[job.sceneIndex];
+      if (!scene || !imageUrl) throw new Error("Sahne planı eksik.");
+      const isLast = job.sceneIndex === scenes.length - 1;
+      const submitted = await fal.queue.submit(SCENE_MODEL, { input: {
+        start_image_url: imageUrl,
+        prompt: `${scene.prompt}\nPhotorealistic UGC product video. Keep the person's identity and the supplied product consistent. Natural handheld camera motion. No captions or invented text. ${isLast ? "Finish the action calmly, settle the camera, hold a clear closing view of the product for the final second; no sudden movement at the cut." : "Complete the action before the end of this clip for a smooth cut to the next shot."}`,
+        duration: String(scene.duration) as "3", generate_audio: false,
+      } });
+      await db.update(jobs).set({ stage: "scene_queued", model: SCENE_MODEL, requestId: submitted.request_id, updatedAt: now() })
+        .where(eq(jobs.id, job.id));
+    } else if (job.stage === "scene_queued") {
+      const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
+      const urls = [...JSON.parse(job.sceneVideoUrls ?? "[]") as string[], outputUrl!];
+      const nextIndex = job.sceneIndex + 1;
+      if (nextIndex < scenes.length) {
+        if (!job.creatorImageUrl) throw new Error("Model fotoğrafı kayıp.");
+        const submitted = await fal.queue.submit(FRAME_MODEL, { input: {
+          image_urls: [job.creatorImageUrl, job.productImageUrl],
+          prompt: `Create a photorealistic vertical 9:16 opening frame for the next shot of the same product ad. Image 1 is the person; preserve their identity and facial features. Image 2 is the actual product; preserve its shape, colors and any readable branding. Do not invent extra products or misleading labels. Scene: ${scenes[nextIndex].prompt}`,
+          aspect_ratio: "9:16", num_images: 1, output_format: "png",
+        } });
+        await db.update(jobs).set({ stage: "frame_queued", model: FRAME_MODEL, requestId: submitted.request_id,
+          sceneIndex: nextIndex, sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+      } else {
+        if (!job.voiceover) throw new Error("Dış ses metni eksik.");
+        const submitted = await fal.queue.submit(TTS_MODEL, { input: {
+          text: job.voiceover, voice: "Aria", language_code: "tr", speed: 1.15,
+        } });
+        await db.update(jobs).set({ stage: "tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
+          sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+      }
+    } else if (job.stage === "tts_queued") {
+      const urls = JSON.parse(job.sceneVideoUrls ?? "[]") as string[];
+      if (!urls.length || !audioUrl) throw new Error("Sahneler veya dış ses kayıp.");
+      const submitted = await fal.queue.submit(MERGE_MODEL, { input: {
+        video_urls: urls, resolution: "portrait_16_9",
+      } });
+      await db.update(jobs).set({ stage: "merge_queued", model: MERGE_MODEL, requestId: submitted.request_id,
+        audioUrl, updatedAt: now() }).where(eq(jobs.id, job.id));
+    } else if (job.stage === "avatar_queued") {
       if (data.moderation_flagged) throw new Error("İçerik moderasyon tarafından reddedildi.");
       const submitted = await fal.queue.submit(PRODUCT_MODEL, {
         input: { images: [{ url: job.productImageUrl, frames: 72 }], fps: 24 },
@@ -52,31 +100,47 @@ export async function advanceJob(job: Job): Promise<void> {
     } else if (job.stage === "product_queued") {
       if (!job.avatarUrl) throw new Error("Avatar videosu kayıp.");
       const submitted = await fal.queue.submit(MERGE_MODEL, {
-        input: { video_urls: [job.avatarUrl, outputUrl], resolution: "portrait_16_9" },
+        input: { video_urls: [job.avatarUrl, outputUrl!], resolution: "portrait_16_9" },
       });
       await db.update(jobs).set({
         stage: "merge_queued", model: MERGE_MODEL, requestId: submitted.request_id,
         productVideoUrl: outputUrl, updatedAt: now(),
       }).where(eq(jobs.id, job.id));
     } else if (job.stage === "merge_queued") {
-      await db.update(jobs).set({ stage: "complete", videoUrl: outputUrl, updatedAt: now() })
-        .where(eq(jobs.id, job.id));
-      if (env.BUCKET) {
-        try {
-          const response = await fetch(outputUrl);
-          if (response.ok && response.body) {
-            await env.BUCKET.put(`jobs/${job.id}/video.mp4`, response.body, {
-              httpMetadata: { contentType: "video/mp4" },
-            });
-          }
-        } catch (error) {
-          console.error("Video storage copy failed", error);
-        }
+      if (job.kind === "storyboard") {
+        if (!job.audioUrl) throw new Error("Dış ses dosyası kayıp.");
+        const submitted = await fal.queue.submit(AUDIO_MERGE_MODEL, { input: {
+          video_url: outputUrl!, audio_url: job.audioUrl,
+        } });
+        await db.update(jobs).set({ stage: "audio_merge_queued", model: AUDIO_MERGE_MODEL,
+          requestId: submitted.request_id, updatedAt: now() }).where(eq(jobs.id, job.id));
+        return;
       }
+      await finishJob(job.id, outputUrl!);
+    } else if (job.stage === "audio_merge_queued") {
+      await finishJob(job.id, outputUrl!);
     }
   } catch (error) {
     await db.update(jobs).set({ stage: "failed", error: publicError(error), updatedAt: now() })
       .where(eq(jobs.id, job.id));
+  }
+}
+
+async function finishJob(id: string, outputUrl: string) {
+  const db = getDb();
+  await db.update(jobs).set({ stage: "complete", videoUrl: outputUrl, updatedAt: now() })
+    .where(eq(jobs.id, id));
+  if (env.BUCKET) {
+    try {
+      const response = await fetch(outputUrl);
+      if (response.ok && response.body) {
+        await env.BUCKET.put(`jobs/${id}/video.mp4`, response.body, {
+          httpMetadata: { contentType: "video/mp4" },
+        });
+      }
+    } catch (error) {
+      console.error("Video storage copy failed", error);
+    }
   }
 }
 
@@ -85,6 +149,8 @@ export function safeJob(job: Job) {
     id: job.id,
     creatorId: job.creatorId,
     script: job.script,
+    kind: job.kind,
+    duration: job.duration,
     stage: job.stage,
     videoUrl: job.videoUrl,
     error: job.error,
