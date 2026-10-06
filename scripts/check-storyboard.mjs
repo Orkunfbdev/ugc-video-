@@ -26,13 +26,15 @@ assert.throws(() => parseStoryboard(example.replace("Konuşma Metni", ""), 20), 
 const talking = parseTalking('Prompt: A woman holds the olive oil bottle.\nKonuşma Metni\n"Bu zeytinyağını kahvaltıda kullanıyorum."', 10);
 assert.match(talking.prompt, /olive oil bottle/);
 assert.equal(talking.speech, "Bu zeytinyağını kahvaltıda kullanıyorum.");
-assert.match(openingFramePrompt(talking), /holding the exact product/);
+assert.match(openingFramePrompt(talking), /presenting the exact product/);
 assert.match(openingFramePrompt({ prompt: "Extreme close-up of the bottle", duration: 10 }), /product close-up/);
 assert.deepEqual(Object.keys(borealInput(talking, "image", "audio")), ["image_url", "audio_url", "prompt", "resolution", "aspect_ratio", "duration"]);
 assert.match(borealInput(talking, "image", "audio").prompt, /on-camera person speaks/);
 assert.match(borealInput({ prompt: "Macro product shot", duration: 7 }, "image", "audio").prompt, /voiceover/);
 assert.match(borealInput({ prompt: "Olive oil pouring onto bread", duration: 7 }, "image", "audio").prompt, /Stop pouring/);
-assert.match(borealInput({ prompt: "Reaction after tasting", duration: 6 }, "image", "audio").prompt, /take one small bite/);
-assert.match(openingFramePrompt({ prompt: "Olive oil pouring onto bread", duration: 7 }), /counter is clean and dry/);
+assert.match(borealInput({ prompt: "Reaction after tasting", duration: 6 }, "image", "audio").prompt, /one small bite or sip/);
+assert.match(openingFramePrompt({ prompt: "Olive oil pouring onto bread", duration: 7 }), /surrounding surface clean and dry/);
+assert.doesNotMatch(borealInput({ prompt: "Pour juice into a glass", duration: 7 }, "image", "audio").prompt, /bread|bottle|oil/);
+assert.doesNotMatch(borealInput({ prompt: "Customer reacts to a face cream", duration: 7 }, "image", "audio").prompt, /bite|sip/);
 assert.equal(parseTalking('Prompt: A woman holds the bottle.\nKonuşma Metni: "Bu ürünü seviyorum."', 10).speech, "Bu ürünü seviyorum.");
 console.log("Storyboard checks passed");
