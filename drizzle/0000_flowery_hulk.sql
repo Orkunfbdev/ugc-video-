@@ -1,0 +1,20 @@
+CREATE TABLE `jobs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`user_id` text NOT NULL,
+	`creator_id` text NOT NULL,
+	`provider` text NOT NULL,
+	`model` text NOT NULL,
+	`script` text NOT NULL,
+	`product_image_url` text NOT NULL,
+	`request_id` text NOT NULL,
+	`stage` text NOT NULL,
+	`avatar_url` text,
+	`product_video_url` text,
+	`video_url` text,
+	`error` text,
+	`moderation_flagged` integer,
+	`moderation_transcription` text,
+	`moderation_error` text,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
