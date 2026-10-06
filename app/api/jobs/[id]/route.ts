@@ -26,6 +26,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
         .where(and(eq(jobs.id, id), eq(jobs.stage, job.stage))).returning();
       return Response.json({ job: safeJob(failed ?? job) });
     }
+    if (status === "HTTP 500" && job.model === BOREAL_MODEL && job.stage === "scene_queued") {
+      const [failed] = await db.update(jobs).set({ stage: "failed", error: `Fal video modeli iç hatayla sonlandı (HTTP 500). Video oluşmadı. İş numarası: ${job.requestId}. Yeni bir üretim başlatmayın.`, updatedAt: new Date().toISOString() })
+        .where(and(eq(jobs.id, id), eq(jobs.stage, job.stage))).returning();
+      return Response.json({ job: safeJob(failed ?? job) });
+    }
     return Response.json({ job: safeJob(job), warning: `Fal video sonucu şu anda okunamadı (${status}). Mevcut iş numarası: ${job.requestId}. Yeni üretim başlatmayın; bu iş sorgulanmaya devam ediyor.` });
   }
   const [updated] = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
