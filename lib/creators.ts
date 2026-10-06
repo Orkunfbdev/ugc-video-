@@ -1,9 +1,9 @@
 export const creators = [
-  { id: "featured", name: "Stüdyo modeli", kind: "photo", image: "/models/featured.jpg", description: "Fotoğraftan konuşan model" },
-  { id: "mia", name: "Mia", kind: "argil", avatar: "Mia outdoor (UGC)", description: "Dış mekân · doğal" },
-  { id: "ines", name: "Ines", kind: "argil", avatar: "Ines (UGC)", description: "Günlük · samimi" },
-  { id: "emma", name: "Emma", kind: "argil", avatar: "Emma (UGC)", description: "Yaşam tarzı" },
-  { id: "brandon", name: "Brandon", kind: "argil", avatar: "Brandon (UGC)", description: "Günlük · enerjik" },
+  { id: "mia", name: "Mia", kind: "argil", avatar: "Mia outdoor (UGC)", description: "Argil · doğal" },
+  { id: "ines", name: "Ines", kind: "argil", avatar: "Ines (UGC)", description: "Argil · samimi" },
+  { id: "emma", name: "Emma", kind: "argil", avatar: "Emma (UGC)", description: "Argil · yaşam tarzı" },
+  { id: "brandon", name: "Brandon", kind: "argil", avatar: "Brandon (UGC)", description: "Argil · enerjik" },
+  { id: "featured", name: "Stüdyo modeli", kind: "photo", image: "/models/featured.jpg", description: "HeyGen · fotoğraftan" },
 ] as const;
 
 export const ARGIL_MODEL = "argil/avatars/text-to-video";

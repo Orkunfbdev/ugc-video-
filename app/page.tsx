@@ -66,7 +66,7 @@ async function productCard(file: File): Promise<File> {
 export default function Home() {
   const [product, setProduct] = useState<File | null>(null);
   const [productPreview, setProductPreview] = useState("");
-  const [creatorId, setCreatorId] = useState("featured");
+  const [creatorId, setCreatorId] = useState("mia");
   const [creatorMode, setCreatorMode] = useState<"ready" | "custom">("ready");
   const [creatorImage, setCreatorImage] = useState<File | null>(null);
   const [creatorPreview, setCreatorPreview] = useState("");
@@ -232,9 +232,9 @@ export default function Home() {
                   {creatorPreview ? <img src={creatorPreview} alt="Yüklenen model" /> : <span className="own-upload-icon"><ImagePlus size={26} /></span>}
                   <span><strong>{creatorImage ? creatorImage.name : "Kişi fotoğrafı yükle"}</strong><small>Yüzü net görünen bir fotoğraf seç · en fazla 8 MB</small></span><ChevronRight size={18} />
                 </button>
-                <p className="hint"><CircleHelp size={15} /> Bu fotoğraf videoda konuşan kişiye dönüşür. Ürün fotoğrafı ayrı kullanılır.</p>
+                <p className="hint"><CircleHelp size={15} /> Kendi fotoğrafın HeyGen ile konuşan videoya dönüşür (0,10 $/sn). Argil yalnızca hazır avatarları destekler. Ürün fotoğrafı ayrıca gösterilir.</p>
               </div>}
-              {kind === "storyboard" && <p className="hint"><CircleHelp size={15} /> Sahneli reklam için fotoğraflı model gerekir; Argil hazır avatarları konuşma modunda kullanılabilir.</p>}
+              {kind === "storyboard" && <p className="hint"><CircleHelp size={15} /> Sahneli reklam Kling kullanır. Argil hazır avatarları yalnızca konuşma modunda kullanılabilir.</p>}
             </div>
 
             <div className="form-section script-section">
@@ -250,13 +250,13 @@ export default function Home() {
             </div>
 
             <div className="form-section duration-section">
-              <div className="section-title"><span className="step">4</span><div><h2>Tek video için Fal maliyetin</h2><p>Bu tutar Fal hesabına yansır. Müşteriye satış fiyatını sen belirlersin.</p></div></div>
+              <div className="section-title"><span className="step">4</span><div><h2>Seçili yöntemle tek video maliyeti</h2><p>{kind === "storyboard" ? "Kling sahneli reklam" : isArgil ? "Argil hazır avatar" : "HeyGen fotoğraf modeli"} · Fal hesabına yansır. Müşteriye satış fiyatını sen belirlersin.</p></div></div>
               <div className="duration-options" role="group" aria-label="Hedef video süresi">
                 {([10, 20, 30] as const).map((seconds) => <button type="button" key={seconds} className={duration === seconds ? "selected" : ""} aria-pressed={duration === seconds} onClick={() => setDuration(seconds)}><strong>{seconds} sn</strong><span>≈ {dollars(priceCents(seconds))}</span></button>)}
               </div>
-              <div className="cost-detail"><strong>{duration} sn / 1 video için Fal maliyetin: yaklaşık {dollars(priceCents(duration))}</strong><span>{kind === "storyboard" ? `Kling ${dollars(duration * 8.4)} + ${sceneCount} sahne görseli ${dollars(sceneCount * 3.9)} + tahmini dış ses ${dollars(duration * 0.14)}` : isArgil ? "Argil: giriş saniyesi başına 0,0225 $" : "HeyGen: üretilen saniye başına 0,10 $"}</span></div>
+              <div className="cost-detail"><strong>{duration} sn / 1 video için Fal maliyetin: yaklaşık {dollars(priceCents(duration))}</strong><span>{kind === "storyboard" ? `Kling ${dollars(duration * 8.4)} + ${sceneCount} sahne görseli ${dollars(sceneCount * 3.9)} + tahmini dış ses ${dollars(duration * 0.14)}` : isArgil ? <>Argil: giriş saniyesi başına 0,0225 $ · <a href="https://fal.ai/models/argil/avatars/text-to-video" target="_blank" rel="noreferrer">Fal fiyatı</a></> : <>HeyGen: üretilen saniye başına 0,10 $ · <a href="https://fal.ai/models/fal-ai/heygen/avatar4/image-to-video" target="_blank" rel="noreferrer">Fal fiyatı</a></>}</span></div>
               <p className="cost-disclaimer">Her yeni video ayrı ücretlendirilir. Tutarlar en yakın cente yuvarlanmıştır; gerçek Fal faturası üretilen süreye, dış sesin uzunluğuna ve medya birleştirmeye göre değişebilir. Konuşan modelde süre hedeftir; sahneli modda klip süreleri seçime göre ayarlanır.</p>
-              <details className="pricing-methods"><summary>Tüm yöntemlerin maliyetini ve kaynaklarını gör</summary><div className="pricing-scroll"><table><thead><tr><th>Yöntem</th><th>10 sn</th><th>20 sn</th><th>30 sn</th></tr></thead><tbody><tr><th><a href="https://fal.ai/models/argil/avatars/text-to-video" target="_blank" rel="noreferrer">Argil</a></th><td>≈ 0,23 $</td><td>≈ 0,45 $</td><td>≈ 0,68 $</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/heygen/avatar4/image-to-video" target="_blank" rel="noreferrer">Fotoğraf modeli</a></th><td>≈ 1,00 $</td><td>≈ 2,00 $</td><td>≈ 3,00 $</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/kling-video/v3/standard/image-to-video" target="_blank" rel="noreferrer">Sahneli reklam</a></th><td>≈ 0,93 $</td><td>≈ 1,83 $</td><td>≈ 2,68 $</td></tr></tbody></table></div><p>Sahneli tahmin: 10 sn için 2, 20/30 sn için 3 sahne; <a href="https://fal.ai/models/fal-ai/nano-banana/edit" target="_blank" rel="noreferrer">görsel</a> ve <a href="https://fal.ai/models/fal-ai/elevenlabs/tts/multilingual-v2" target="_blank" rel="noreferrer">dış ses</a> dahil. Birleştirme ücretleri hariçtir.</p></details>
+              <details className="pricing-methods"><summary>Tüm yöntemlerin maliyetini ve kaynaklarını gör</summary><div className="pricing-scroll"><table><thead><tr><th>Yöntem</th><th>10 sn</th><th>20 sn</th><th>30 sn</th></tr></thead><tbody><tr><th><a href="https://fal.ai/models/argil/avatars/text-to-video" target="_blank" rel="noreferrer">Argil hazır avatar</a></th><td>≈ 0,23 $</td><td>≈ 0,45 $</td><td>≈ 0,68 $</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/heygen/avatar4/image-to-video" target="_blank" rel="noreferrer">HeyGen fotoğraf modeli</a></th><td>≈ 1,00 $</td><td>≈ 2,00 $</td><td>≈ 3,00 $</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/kling-video/v3/standard/image-to-video" target="_blank" rel="noreferrer">Kling sahneli reklam</a></th><td>≈ 0,93 $</td><td>≈ 1,83 $</td><td>≈ 2,68 $</td></tr></tbody></table></div><p>Sahneli tahmin: 10 sn için 2, 20/30 sn için 3 sahne; <a href="https://fal.ai/models/fal-ai/nano-banana/edit" target="_blank" rel="noreferrer">görsel</a> ve <a href="https://fal.ai/models/fal-ai/elevenlabs/tts/multilingual-v2" target="_blank" rel="noreferrer">dış ses</a> dahil. Birleştirme ücretleri hariçtir.</p></details>
             </div>
 
             {needsLogin && <div className="inline-error">Video üretmek için <a href="/signin-with-chatgpt?return_to=/" target="_top">oturum aç</a>.</div>}
