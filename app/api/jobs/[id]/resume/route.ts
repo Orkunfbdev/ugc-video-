@@ -16,7 +16,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   const db = getDb();
   const [job] = await db.select().from(jobs)
     .where(and(eq(jobs.id, id), eq(jobs.userId, user.userId))).limit(1);
-  const hasVoice = job?.model === TTS_MODEL && !!job.avatarUrl;
+  const hasVoice = job?.model === TTS_MODEL && !!job.avatarUrl && !job.error?.startsWith("Konuşma Boreal") && !job.error?.startsWith("Konuşma yaklaşık");
   const hasFailedVideo = job?.model === BOREAL_MODEL && !!job.avatarUrl && !!job.audioUrl && job.duration > 20;
   if (!job || job.stage !== "failed" || job.provider !== "boreal" || (!hasVoice && !hasFailedVideo))
     return Response.json({ error: "Bu video kaldığı yerden devam ettirilemiyor." }, { status: 409 });

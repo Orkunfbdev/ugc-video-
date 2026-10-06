@@ -20,7 +20,7 @@ export function wordCount(text: string) {
 }
 
 export function maxVoiceWords(duration: number) {
-  return Math.floor(duration * 2);
+  return Math.floor(duration * 1.5);
 }
 
 export function parseTalking(input: string, duration: number): Scene {
