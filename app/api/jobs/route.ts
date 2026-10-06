@@ -3,10 +3,10 @@ import { and, desc, eq, notInArray } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getDb } from "@/db";
 import { jobs } from "@/db/schema";
-import { ARGIL_MODEL, creators, FRAME_MODEL, HEYGEN_MODEL } from "@/lib/creators";
+import { creators, FRAME_MODEL } from "@/lib/creators";
 import { falClient, publicError, validImage } from "@/lib/fal";
 import { safeJob } from "@/lib/job-pipeline";
-import { maxVoiceWords, parseStoryboard, promptKind, wordCount } from "@/lib/storyboard";
+import { openingFramePrompt, parseTalking, parseStoryboard, promptKind } from "@/lib/storyboard";
 
 export const runtime = "edge";
 
@@ -34,20 +34,16 @@ export async function POST(request: Request) {
   const creatorFile = form.get("creatorImage");
 
   if (!validImage(productFile)) return Response.json({ error: "8 MB altında JPG, PNG veya WebP ürün fotoğrafı yükleyin." }, { status: 400 });
-  if ((!creator && !isCustom) || ((isCustom || creator?.kind === "photo") && !validImage(creatorFile))) {
+  if ((!creator && !isCustom) || !validImage(creatorFile)) {
     return Response.json({ error: "Bir hazır model seçin veya geçerli bir kişi fotoğrafı yükleyin." }, { status: 400 });
   }
   if (![10, 20, 30].includes(duration))
     return Response.json({ error: "Geçerli video süresi seçin." }, { status: 400 });
   if (script.length < 12 || script.length > 5000)
     return Response.json({ error: "Prompt 12–5000 karakter olmalı." }, { status: 400 });
-  if (kind === "storyboard" && creator?.kind === "argil")
-    return Response.json({ error: "Sahneli reklam için fotoğraflı bir model seçin." }, { status: 400 });
-  let storyboard: ReturnType<typeof parseStoryboard> | null = null;
+  let scenes: ReturnType<typeof parseStoryboard>["scenes"];
   try {
-    if (kind === "storyboard") storyboard = parseStoryboard(script, duration);
-    else if (wordCount(script) > maxVoiceWords(duration))
-      throw new Error(`${duration} saniyelik hedefe en fazla ${maxVoiceWords(duration)} kelime önerilir. Metni kısaltın veya süreyi artırın.`);
+    scenes = kind === "storyboard" ? parseStoryboard(script, duration).scenes : [parseTalking(script, duration)];
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Metin geçersiz." }, { status: 400 });
   }
@@ -67,50 +63,22 @@ export async function POST(request: Request) {
       httpMetadata: { contentType: productFile.type },
     });
 
-    let provider: "argil" | "heygen" | "kling";
-    let model: string;
-    let input: Record<string, unknown>;
-    let creatorImageUrl: string | null = null;
-    if (creator?.kind !== "argil") {
-      const image = creatorFile as File;
-      creatorImageUrl = await fal.storage.upload(image);
-      await env.BUCKET?.put(`jobs/${id}/creator`, image.stream(), {
-        httpMetadata: { contentType: image.type },
-      });
-    }
-    if (storyboard) {
-      provider = "kling";
-      model = FRAME_MODEL;
-      input = {
-        image_urls: [creatorImageUrl, productImageUrl],
-        prompt: `Create a photorealistic vertical 9:16 opening frame for a social media product ad. Image 1 is the person; preserve their identity and facial features. Image 2 is the actual product; preserve its shape, colors and any readable branding. Do not invent extra products or misleading labels. Scene: ${storyboard.scenes[0].prompt}`,
-        aspect_ratio: "9:16", num_images: 1, output_format: "png",
-      };
-    } else if (creator?.kind === "argil") {
-      provider = "argil";
-      model = ARGIL_MODEL;
-      input = { avatar: creator.avatar, text: script, voice: "Rachel", remove_background: false };
-    } else {
-      provider = "heygen";
-      model = HEYGEN_MODEL;
-      input = {
-        image_url: creatorImageUrl,
-        prompt: script,
-        voice: "Melissa",
-        talking_style: "expressive",
-        aspect_ratio: "9:16",
-        resolution: "720p",
-        background: { type: "image", value: productImageUrl },
-      };
-    }
-    const submitted = await fal.queue.submit(model, { input });
+    const image = creatorFile as File;
+    const creatorImageUrl = await fal.storage.upload(image);
+    await env.BUCKET?.put(`jobs/${id}/creator`, image.stream(), {
+      httpMetadata: { contentType: image.type },
+    });
+    const submitted = await fal.queue.submit(FRAME_MODEL, { input: {
+      image_urls: [creatorImageUrl, productImageUrl],
+      prompt: openingFramePrompt(scenes[0]),
+      aspect_ratio: "9:16", num_images: 1, output_format: "png",
+    } });
     const timestamp = new Date().toISOString();
-    const stage = storyboard ? "frame_queued" : "avatar_queued";
+    const stage = "frame_queued";
     await db.insert(jobs).values({
-      id, userId: user.userId, creatorId, provider, model, script, kind, duration,
-      scenePlan: storyboard ? JSON.stringify(storyboard.scenes) : null,
-      sceneVideoUrls: storyboard ? "[]" : null,
-      creatorImageUrl, voiceover: storyboard?.voiceover ?? null,
+      id, userId: user.userId, creatorId, provider: "boreal", model: FRAME_MODEL, script, kind, duration,
+      scenePlan: JSON.stringify(scenes), sceneVideoUrls: "[]",
+      creatorImageUrl, voiceover: scenes.map((scene) => scene.speech).join(" "),
       productImageUrl, requestId: submitted.request_id, stage,
       createdAt: timestamp, updatedAt: timestamp,
     });

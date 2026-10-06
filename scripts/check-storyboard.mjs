@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { parseStoryboard, promptKind } from "../lib/storyboard.ts";
+import { borealInput, openingFramePrompt, parseTalking, parseStoryboard, promptKind } from "../lib/storyboard.ts";
 
 const example = `Sahne 1: Kanca (0 - 7. Saniye)
 Prompt: A woman in a kitchen holds the real product toward the camera.
@@ -23,4 +23,13 @@ assert.deepEqual(plan.scenes.map((scene) => scene.speech), ["Ürünümü göster
 assert.equal(plan.voiceover, "Ürünümü göstermek istiyorum. Günlük kullanımda çok pratik. Siz de deneyin.");
 assert.deepEqual(parseStoryboard(example, 10).scenes.map((scene) => scene.duration), [4, 3, 3]);
 assert.throws(() => parseStoryboard(example.replace("Konuşma Metni", ""), 20), /Konuşma Metni/);
+const talking = parseTalking('Prompt: A woman holds the olive oil bottle.\nKonuşma Metni\n"Bu zeytinyağını kahvaltıda kullanıyorum."', 10);
+assert.match(talking.prompt, /olive oil bottle/);
+assert.equal(talking.speech, "Bu zeytinyağını kahvaltıda kullanıyorum.");
+assert.match(openingFramePrompt(talking), /holding the exact product/);
+assert.match(openingFramePrompt({ prompt: "Extreme close-up of the bottle", duration: 10 }), /product close-up/);
+assert.deepEqual(Object.keys(borealInput(talking, "image", "audio")), ["image_url", "audio_url", "prompt", "resolution", "aspect_ratio", "duration"]);
+assert.match(borealInput(talking, "image", "audio").prompt, /on-camera person speaks/);
+assert.match(borealInput({ prompt: "Macro product shot", duration: 7 }, "image", "audio").prompt, /voiceover/);
+assert.equal(parseTalking('Prompt: A woman holds the bottle.\nKonuşma Metni: "Bu ürünü seviyorum."', 10).speech, "Bu ürünü seviyorum.");
 console.log("Storyboard checks passed");

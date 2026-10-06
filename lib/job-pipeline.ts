@@ -3,8 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { jobs } from "@/db/schema";
 import { getDb } from "@/db";
 import { falClient, publicError } from "@/lib/fal";
-import { AUDIO_MERGE_MODEL, FRAME_MODEL, MERGE_MODEL, PRODUCT_MODEL, SCENE_MODEL, TTS_MODEL } from "@/lib/creators";
-import type { Scene } from "@/lib/storyboard";
+import { AUDIO_MERGE_MODEL, BOREAL_MODEL, FRAME_MODEL, MERGE_MODEL, PRODUCT_MODEL, SCENE_MODEL, TTS_MODEL } from "@/lib/creators";
+import { borealInput, openingFramePrompt, type Scene } from "@/lib/storyboard";
 
 type Job = typeof jobs.$inferSelect;
 
@@ -47,6 +47,28 @@ async function afterScene(job: Job, sceneUrl: string, fal: ReturnType<typeof fal
   }
 }
 
+async function afterBorealScene(job: Job, sceneUrl: string, fal: ReturnType<typeof falClient>) {
+  const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
+  const urls = [...JSON.parse(job.sceneVideoUrls ?? "[]") as string[], sceneUrl];
+  const nextIndex = job.sceneIndex + 1;
+  if (nextIndex < scenes.length) {
+    if (!job.creatorImageUrl) throw new Error("Model fotoğrafı kayıp.");
+    const submitted = await fal.queue.submit(FRAME_MODEL, { input: {
+      image_urls: [job.creatorImageUrl, job.productImageUrl],
+      prompt: openingFramePrompt(scenes[nextIndex]),
+      aspect_ratio: "9:16", num_images: 1, output_format: "png",
+    } });
+    await getDb().update(jobs).set({ stage: "frame_queued", model: FRAME_MODEL, requestId: submitted.request_id,
+      sceneIndex: nextIndex, sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+  } else if (urls.length === 1) {
+    await finishJob(job.id, sceneUrl);
+  } else {
+    const submitted = await fal.queue.submit(MERGE_MODEL, { input: { video_urls: urls, resolution: "portrait_16_9" } });
+    await getDb().update(jobs).set({ stage: "merge_queued", model: MERGE_MODEL, requestId: submitted.request_id,
+      sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+  }
+}
+
 export async function advanceJob(job: Job): Promise<void> {
   if (!job.stage.endsWith("_queued")) return;
   const fal = falClient();
@@ -72,7 +94,23 @@ export async function advanceJob(job: Job): Promise<void> {
   if (!(await claim(job, `${job.stage.replace("_queued", "")}_submitting`))) return;
   const db = getDb();
   try {
-    if (job.stage === "frame_queued") {
+    if (job.provider === "boreal" && job.stage === "frame_queued") {
+      const scene = (JSON.parse(job.scenePlan ?? "[]") as Scene[])[job.sceneIndex];
+      if (!scene?.speech || !imageUrl) throw new Error("Sahne konuşması veya görseli eksik.");
+      const submitted = await fal.queue.submit(TTS_MODEL, { input: {
+        text: scene.speech, voice: "Aria", language_code: "tr", speed: 1,
+      } });
+      await db.update(jobs).set({ stage: "scene_tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
+        avatarUrl: imageUrl, updatedAt: now() }).where(eq(jobs.id, job.id));
+    } else if (job.provider === "boreal" && job.stage === "scene_tts_queued") {
+      const scene = (JSON.parse(job.scenePlan ?? "[]") as Scene[])[job.sceneIndex];
+      if (!scene || !job.avatarUrl || !audioUrl) throw new Error("Sahne görseli veya Türkçe ses eksik.");
+      const submitted = await fal.queue.submit(BOREAL_MODEL, { input: borealInput(scene, job.avatarUrl, audioUrl) });
+      await db.update(jobs).set({ stage: "scene_queued", model: BOREAL_MODEL, requestId: submitted.request_id,
+        audioUrl, updatedAt: now() }).where(eq(jobs.id, job.id));
+    } else if (job.provider === "boreal" && job.stage === "scene_queued") {
+      await afterBorealScene(job, outputUrl!, fal);
+    } else if (job.stage === "frame_queued") {
       const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
       const scene = scenes[job.sceneIndex];
       if (!scene || !imageUrl) throw new Error("Sahne planı eksik.");

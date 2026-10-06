@@ -20,7 +20,35 @@ export function wordCount(text: string) {
 }
 
 export function maxVoiceWords(duration: number) {
-  return Math.floor(duration * 2.3);
+  return Math.floor(duration * 2);
+}
+
+export function parseTalking(input: string, duration: number): Scene {
+  const voiceStart = input.search(voiceHeading);
+  if (voiceStart < 0 && /^\s*Prompt\s*:/i.test(input)) throw new Error("Promptun altına 'Konuşma Metni' başlığıyla modelin söyleyeceği sözleri ekleyin.");
+  const visual = voiceStart < 0 ? "" : input.slice(0, voiceStart).replace(/^\s*Prompt\s*:/i, "").trim();
+  const voiceBlock = voiceStart < 0 ? "" : input.slice(voiceStart);
+  const firstLine = voiceBlock.split("\n", 1)[0];
+  const speechPart = voiceStart < 0 ? input.trim() : (firstLine.includes(":") ? firstLine.slice(firstLine.indexOf(":") + 1).trim() : "") || voiceBlock.slice(firstLine.length).trim();
+  const speech = speechPart.replace(/^[“"]|[”"]$/g, "").trim();
+  if (speech.length < 12) throw new Error("Modelin söyleyeceği en az bir cümle yazın.");
+  if (wordCount(speech) > maxVoiceWords(duration))
+    throw new Error(`${duration} saniyelik hedefe en fazla ${maxVoiceWords(duration)} kelime önerilir. Metni kısaltın veya süreyi artırın.`);
+  return { prompt: visual || "A natural handheld 9:16 smartphone UGC video. The person faces the camera, speaks warmly and holds the actual product visibly in hand. Soft daylight, subtle natural gestures, realistic skin and a calm ending with the product clearly visible.", duration, speech };
+}
+
+export function openingFramePrompt(scene: Scene) {
+  const closeup = /close[ -]?up|macro|b-?roll|yakın çekim/i.test(scene.prompt);
+  return `Create a photorealistic vertical 9:16 smartphone UGC opening frame. Image 1 is the person; preserve their identity and face when visible. Image 2 is the actual product; preserve its shape, colors and readable label. ${closeup ? "For this product close-up, focus on the real product in use; the person's face need not appear." : "Show the person naturally holding the exact product in hand, with both face and product clearly visible."} Natural daylight, realistic hands, no invented text or extra products. Scene: ${scene.prompt}`;
+}
+
+export function borealInput(scene: Scene, imageUrl: string, audioUrl: string) {
+  const closeup = /close[ -]?up|macro|b-?roll|yakın çekim/i.test(scene.prompt);
+  return {
+    image_url: imageUrl, audio_url: audioUrl,
+    prompt: `[VISUAL] ${scene.prompt}\nPhotorealistic handheld 9:16 smartphone UGC video. Preserve the reference person's identity and exact product appearance, label and colors. Natural movements and daylight. Finish with a settled frame, no abrupt gesture.\n[SPEECH] ${closeup ? "Use the supplied Turkish audio as voiceover. No person needs to speak on screen." : "The on-camera person speaks the supplied Turkish audio with natural synchronized mouth movement. Do not translate or invent words."}\n[SOUNDS] Keep the supplied audio clear. No extra music.\n[TEXT] None.`,
+    resolution: "720p", aspect_ratio: "9:16", duration: scene.duration,
+  };
 }
 
 export function parseStoryboard(input: string, duration: number): Storyboard {
