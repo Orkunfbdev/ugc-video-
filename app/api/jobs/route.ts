@@ -6,7 +6,7 @@ import { jobs } from "@/db/schema";
 import { ARGIL_MODEL, creators, FRAME_MODEL, HEYGEN_MODEL } from "@/lib/creators";
 import { falClient, publicError, validImage } from "@/lib/fal";
 import { safeJob } from "@/lib/job-pipeline";
-import { parseStoryboard, wordCount } from "@/lib/storyboard";
+import { maxVoiceWords, parseStoryboard, wordCount } from "@/lib/storyboard";
 
 export const runtime = "edge";
 
@@ -46,8 +46,8 @@ export async function POST(request: Request) {
   let storyboard: ReturnType<typeof parseStoryboard> | null = null;
   try {
     if (kind === "storyboard") storyboard = parseStoryboard(script, duration);
-    else if (wordCount(script) > Math.floor(duration * 2.5))
-      throw new Error(`${duration} saniyelik hedefe en fazla ${Math.floor(duration * 2.5)} kelime önerilir. Metni kısaltın veya süreyi artırın.`);
+    else if (wordCount(script) > maxVoiceWords(duration))
+      throw new Error(`${duration} saniyelik hedefe en fazla ${maxVoiceWords(duration)} kelime önerilir. Metni kısaltın veya süreyi artırın.`);
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Metin geçersiz." }, { status: 400 });
   }

@@ -151,6 +151,8 @@ export function safeJob(job: Job) {
     script: job.script,
     kind: job.kind,
     duration: job.duration,
+    sceneIndex: job.sceneIndex,
+    sceneCount: job.scenePlan ? (JSON.parse(job.scenePlan) as Scene[]).length : 0,
     stage: job.stage,
     videoUrl: job.videoUrl,
     error: job.error,

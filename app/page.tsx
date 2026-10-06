@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowRight, Check, ChevronRight, CircleHelp, ImagePlus, LoaderCircle, Mic2, Play, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { creators } from "@/lib/creators";
-import { wordCount } from "@/lib/storyboard";
+import { maxVoiceWords, wordCount } from "@/lib/storyboard";
 
 type Job = {
   id: string;
@@ -12,6 +12,7 @@ type Job = {
   kind: string;
   duration: number;
   sceneIndex?: number;
+  sceneCount?: number;
   stage: string;
   videoUrl: string | null;
   error: string | null;
@@ -148,7 +149,7 @@ export default function Home() {
     if (!product) { setError("Önce ürün fotoğrafını yükleyin."); return; }
     if (creatorMode === "custom" && !creatorImage) { setError("Kendi modeliniz için kişi fotoğrafını yükleyin."); return; }
     if (script.trim().length < 12) { setError("Video metnini yazın (en az 12 karakter)."); return; }
-    if (kind === "talking" && wordCount(script) > Math.floor(duration * 2.5)) { setError(`${duration} saniyelik hedefe en fazla ${Math.floor(duration * 2.5)} kelime önerilir.`); return; }
+    if (kind === "talking" && wordCount(script) > maxVoiceWords(duration)) { setError(`${duration} saniyelik hedefe en fazla ${maxVoiceWords(duration)} kelime önerilir.`); return; }
     setSubmitting(true);
     try {
       const form = new FormData();
@@ -168,7 +169,7 @@ export default function Home() {
       if (response.status === 401) setNeedsLogin(true);
       if (!response.ok) throw new Error(data.error ?? "Üretim başlatılamadı.");
       if (!data.job) throw new Error("Üretim isteği doğrulanamadı.");
-      const nextJob = { id: data.job.id, creatorId: creatorMode === "custom" ? "custom" : creatorId, script, kind, duration, stage: data.job.stage, videoUrl: null, error: null, createdAt: new Date().toISOString() };
+      const nextJob = { id: data.job.id, creatorId: creatorMode === "custom" ? "custom" : creatorId, script, kind, duration, sceneIndex: 0, sceneCount: kind === "storyboard" ? sceneCount : 0, stage: data.job.stage, videoUrl: null, error: null, createdAt: new Date().toISOString() };
       setCurrentJob(nextJob);
       setJobs((previous) => [nextJob, ...previous]);
     } catch (cause) {
@@ -253,7 +254,7 @@ export default function Home() {
               <div className="duration-options" role="group" aria-label="Hedef video süresi">
                 {([10, 20, 30] as const).map((seconds) => <button type="button" key={seconds} className={duration === seconds ? "selected" : ""} aria-pressed={duration === seconds} onClick={() => setDuration(seconds)}><strong>{seconds} sn</strong><span>≈ {cents(priceCents(seconds))}</span></button>)}
               </div>
-              <div className="cost-detail"><strong>Seçilen: yaklaşık {cents(priceCents(duration))}</strong><span>{kind === "storyboard" ? `Kling ${cents(duration * 8.4)} + ${sceneCount} sahne görseli ${cents(sceneCount * 3.9)} + tahmini dış ses ${cents(duration * 0.14)}` : isArgil ? `Argil liste fiyatı: 2,25 ¢ / üretilen saniye` : `HeyGen liste fiyatı: 10 ¢ / üretilen saniye`}</span></div>
+              <div className="cost-detail"><strong>Seçilen: yaklaşık {cents(priceCents(duration))}</strong><span>{kind === "storyboard" ? `Kling ${cents(duration * 8.4)} + ${sceneCount} sahne görseli ${cents(sceneCount * 3.9)} + tahmini dış ses ${cents(duration * 0.14)}` : isArgil ? `Argil liste fiyatı: 2,25 ¢ / giriş saniyesi` : `HeyGen liste fiyatı: 10 ¢ / üretilen saniye`}</span></div>
               <p className="cost-disclaimer">ABD senti. Gerçek tutar üretilen süreye, dış sesin karakter sayısına ve Fal medya birleştirme işlemlerine göre değişebilir. Konuşan modelde süre hedeftir; sahneli modda klip süreleri seçime göre ayarlanır.</p>
               <details className="pricing-methods"><summary>Tüm yöntemlerin maliyetini ve kaynaklarını gör</summary><div className="pricing-scroll"><table><thead><tr><th>Yöntem</th><th>10 sn</th><th>20 sn</th><th>30 sn</th></tr></thead><tbody><tr><th><a href="https://fal.ai/models/argil/avatars/text-to-video" target="_blank" rel="noreferrer">Argil</a></th><td>22,5 ¢</td><td>45 ¢</td><td>67,5 ¢</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/heygen/avatar4/image-to-video" target="_blank" rel="noreferrer">Fotoğraf modeli</a></th><td>100 ¢</td><td>200 ¢</td><td>300 ¢</td></tr><tr><th><a href="https://fal.ai/models/fal-ai/kling-video/v3/standard/image-to-video" target="_blank" rel="noreferrer">Sahneli reklam</a></th><td>≈ 93,2 ¢</td><td>≈ 182,5 ¢</td><td>≈ 267,9 ¢</td></tr></tbody></table></div><p>Sahneli tahmin: 10 sn için 2, 20/30 sn için 3 sahne; <a href="https://fal.ai/models/fal-ai/nano-banana/edit" target="_blank" rel="noreferrer">görsel</a> ve <a href="https://fal.ai/models/fal-ai/elevenlabs/tts/multilingual-v2" target="_blank" rel="noreferrer">dış ses</a> dahil. Birleştirme ücretleri hariçtir.</p></details>
             </div>
@@ -266,7 +267,7 @@ export default function Home() {
           <aside className="result-column" aria-label="Video sonucu">
             <div className="result-header"><div><h2>Videon</h2><p>{currentJob ? `${currentJob.duration} sn hedef · ${currentJob.kind === "storyboard" ? "Sahneli reklam" : "Konuşan model"}` : "Sonuç burada görünecek."}</p></div><span>9:16</span></div>
             <div className={`video-frame ${currentJob?.stage === "complete" ? "video-ready" : ""}`}>
-              {currentJob?.stage === "complete" && currentJob.videoUrl ? <video key={currentJob.id} src={currentJob.videoUrl} controls playsInline poster={productPreview || undefined} /> : active ? <div className="frame-progress"><span className="progress-mark"><LoaderCircle size={28} className="spin" /></span><strong>{stageText[currentJob.stage] ?? "Video hazırlanıyor"}</strong><p>İşlem arka planda sürüyor. Bu sayfaya daha sonra dönebilirsin.</p><div className="progress-track"><span /></div></div> : currentJob?.stage === "failed" ? <div className="frame-progress failed"><X size={27} /><strong>Video oluşturulamadı</strong><p>{currentJob.error ?? "Yeniden deneyin."}</p></div> : <div className="frame-empty"><div className="frame-art"><div className="frame-person">{creatorMode === "ready" && selectedCreator && "image" in selectedCreator ? <img src={selectedCreator.image} alt="Seçilen model" /> : creatorMode === "custom" && creatorPreview ? <img src={creatorPreview} alt="Seçilen model" /> : <span>{selectedCreator?.name.slice(0, 1) ?? "M"}</span>}</div><div className="frame-product">{productPreview ? <img src={productPreview} alt="Seçilen ürün" /> : <ImagePlus size={22} />}</div></div><div className="frame-caption"><span className="frame-caption-line" /><span className="frame-caption-line short" /></div><span className="preview-label">ÖNİZLEME</span></div>}
+              {currentJob?.stage === "complete" && currentJob.videoUrl ? <video key={currentJob.id} src={currentJob.videoUrl} controls playsInline poster={productPreview || undefined} /> : active ? <div className="frame-progress"><span className="progress-mark"><LoaderCircle size={28} className="spin" /></span><strong>{stageText[currentJob.stage] ?? "Video hazırlanıyor"}</strong>{currentJob.kind === "storyboard" && ["frame_queued", "scene_queued"].includes(currentJob.stage) && <span className="scene-progress">Sahne {(currentJob.sceneIndex ?? 0) + 1}/{currentJob.sceneCount ?? 3}</span>}<p>İşlem arka planda sürüyor. Bu sayfaya daha sonra dönebilirsin.</p><div className="progress-track"><span /></div></div> : currentJob?.stage === "failed" ? <div className="frame-progress failed"><X size={27} /><strong>Video oluşturulamadı</strong><p>{currentJob.error ?? "Yeniden deneyin."}</p></div> : <div className="frame-empty"><div className="frame-art"><div className="frame-person">{creatorMode === "ready" && selectedCreator && "image" in selectedCreator ? <img src={selectedCreator.image} alt="Seçilen model" /> : creatorMode === "custom" && creatorPreview ? <img src={creatorPreview} alt="Seçilen model" /> : <span>{selectedCreator?.name.slice(0, 1) ?? "M"}</span>}</div><div className="frame-product">{productPreview ? <img src={productPreview} alt="Seçilen ürün" /> : <ImagePlus size={22} />}</div></div><div className="frame-caption"><span className="frame-caption-line" /><span className="frame-caption-line short" /></div><span className="preview-label">ÖNİZLEME</span></div>}
             </div>
             {currentJob?.stage === "complete" && <a className="download-button" href={`/api/jobs/${currentJob.id}/video`}><ArrowDownToLine size={17} /> MP4 videoyu indir</a>}
             {warning && active && <p className="warning" role="status">{warning}</p>}

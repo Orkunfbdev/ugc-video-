@@ -5,6 +5,10 @@ export function wordCount(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+export function maxVoiceWords(duration: number) {
+  return Math.floor(duration * 2.3);
+}
+
 export function parseStoryboard(input: string, duration: number): Storyboard {
   const voiceStart = input.search(/(?:konuşma\s*metni|voiceover|dış\s*ses)/i);
   if (voiceStart < 0) throw new Error("Sahneli metne 'Konuşma Metni' başlığı ve dış ses metni ekleyin.");
@@ -44,6 +48,6 @@ export function parseStoryboard(input: string, duration: number): Storyboard {
   const quoted = [...voicePart.matchAll(/[“"]([^”"]+)[”"]/g)].map((match) => match[1].trim());
   const voiceover = (quoted.length ? quoted.join(" ") : voicePart.replace(/^\s*\([^\n]*\)\s*:?/gm, "").trim()).replace(/\s+/g, " ").trim();
   if (voiceover.length < 12) throw new Error("Dış ses için en az bir cümle yazın.");
-  if (wordCount(voiceover) > Math.floor(duration * 2.5)) throw new Error(`${duration} saniyeye en fazla ${Math.floor(duration * 2.5)} kelimelik dış ses sığar. Metni kısaltın veya süreyi artırın.`);
+  if (wordCount(voiceover) > maxVoiceWords(duration)) throw new Error(`${duration} saniyeye en fazla ${maxVoiceWords(duration)} kelimelik dış ses sığar. Metni kısaltın veya süreyi artırın.`);
   return { scenes, voiceover };
 }
