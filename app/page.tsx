@@ -70,8 +70,10 @@ export default function Home() {
   const [creatorMode, setCreatorMode] = useState<"ready" | "custom">("ready");
   const [creatorImage, setCreatorImage] = useState<File | null>(null);
   const [creatorPreview, setCreatorPreview] = useState("");
-  const [script, setScript] = useState("");
+  const [talkingScript, setTalkingScript] = useState("");
+  const [storyboardScript, setStoryboardScript] = useState("");
   const [kind, setKind] = useState<"talking" | "storyboard">("talking");
+  const script = kind === "storyboard" ? storyboardScript : talkingScript;
   const [duration, setDuration] = useState<10 | 20 | 30>(20);
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -244,7 +246,7 @@ export default function Home() {
                 <button type="button" role="tab" aria-selected={kind === "storyboard"} className={kind === "storyboard" ? "selected" : ""} onClick={() => { setKind("storyboard"); if (isArgil) setCreatorId("featured"); }}><Play size={16} /> Sahneli reklam</button>
               </div>
               <label htmlFor="script" className="field-label">{kind === "storyboard" ? "Sahne tarifleri ve konuşma metni" : "Konuşma metni"}</label>
-              <textarea id="script" className={kind === "storyboard" ? "storyboard-textarea" : ""} maxLength={kind === "storyboard" ? 5000 : 500} value={script} onChange={(event) => setScript(event.target.value)} placeholder={kind === "storyboard" ? "Sahne 1: Kanca (0 - 7. saniye)\nPrompt: Model kameraya bakar ve ürünü gösterir...\n\nSahne 2: Ürün kullanımı (7 - 14. saniye)\nPrompt: Ürünün yakın çekimi...\n\nSahne 3: Kapanış (14 - 20. saniye)\nPrompt: Model ürünle gülümser, sakin kapanış...\n\nKonuşma Metni\n(0-7. saniye): \"...\"\n(7-14. saniye): \"...\"\n(14-20. saniye): \"...\"" : "Örneğin: Bu ürünü son birkaç haftadır kullanıyorum. En sevdiğim yanı..."} />
+              <textarea id="script" className={kind === "storyboard" ? "storyboard-textarea" : ""} maxLength={kind === "storyboard" ? 5000 : 500} value={script} onChange={(event) => kind === "storyboard" ? setStoryboardScript(event.target.value) : setTalkingScript(event.target.value)} placeholder={kind === "storyboard" ? "Sahne 1: Kanca (0 - 7. saniye)\nPrompt: Model kameraya bakar ve ürünü gösterir...\n\nSahne 2: Ürün kullanımı (7 - 14. saniye)\nPrompt: Ürünün yakın çekimi...\n\nSahne 3: Kapanış (14 - 20. saniye)\nPrompt: Model ürünle gülümser, sakin kapanış...\n\nKonuşma Metni\n(0-7. saniye): \"...\"\n(7-14. saniye): \"...\"\n(14-20. saniye): \"...\"" : "Örneğin: Bu ürünü son birkaç haftadır kullanıyorum. En sevdiğim yanı..."} />
               <div className="textarea-footer"><span><Mic2 size={15} /> {kind === "storyboard" ? "2–3 sahne; Konuşma Metni başlığıyla Türkçe dış sesi ekle" : "Türkçe metin yazabilirsin"}</span><span>{script.length}/{kind === "storyboard" ? 5000 : 500}</span></div>
               {kind === "storyboard" && <p className="hint">Örneğindeki “Sahne 1 / Prompt / Konuşma Metni” düzenini doğrudan yapıştırabilirsin. Son sahne sakin bir ürün kapanışıyla biter. Dış ses, sahnelerle yaklaşık eşleşir; dudak senkronu bu modda yoktur.</p>}
             </div>
