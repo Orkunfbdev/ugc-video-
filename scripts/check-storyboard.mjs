@@ -15,7 +15,7 @@ Konuşma Metni
 const plan = parseStoryboard(example, 20);
 const continuous = continuousScene(plan);
 assert.equal(continuous.duration, 20);
-assert.equal(continuousScene(parseStoryboard(example, 30)).duration, 30);
+assert.equal(continuousScene(parseStoryboard(example, 15)).duration, 15);
 assert.equal(continuous.speech, plan.voiceover);
 assert.match(continuous.prompt, /0-7s:/);
 assert.match(continuous.prompt, /14-20s:/);
@@ -23,6 +23,7 @@ assert.match(openingFramePrompt(continuous), /woman in a kitchen holds the real 
 assert.doesNotMatch(openingFramePrompt(continuous), /Extreme close-up/);
 assert.match(borealInput(continuous, "image", "audio").prompt, /one uninterrupted performance/);
 assert.match(borealInput(continuous, "image", "audio").prompt, /no edits, cuts, resets/);
+assert.throws(() => borealInput({ ...continuous, duration: 21 }, "image", "audio"), /en fazla 20 saniye/);
 assert.equal(promptKind(example), "storyboard");
 assert.equal(promptKind("Bu ürünü her gün kullanıyorum, size de öneririm."), "talking");
 const decorated = `🎬 AI Video Üretim Promptları\n${example.replace("Konuşma Metni", "🎙️ Konuşma Metni (Voiceover / Dış Ses)")}`;

@@ -46,6 +46,7 @@ export function openingFramePrompt(scene: Scene) {
 }
 
 export function borealInput(scene: Scene, imageUrl: string, audioUrl: string) {
+  if (scene.duration > 20) throw new Error("Boreal tek çekimde en fazla 20 saniye kabul ediyor.");
   const closeup = /close[ -]?up|macro|b-?roll|yakın çekim/i.test(scene.prompt);
   const pouring = /pour|drizzl|dök/i.test(scene.prompt);
   const tasting = /tast|tatt|tadım|tadına/i.test(scene.prompt);

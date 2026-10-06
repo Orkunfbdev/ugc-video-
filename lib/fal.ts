@@ -16,6 +16,7 @@ export function validImage(value: FormDataEntryValue | null): value is File {
 export function publicError(error: unknown) {
   const message = error instanceof Error ? error.message : "Bilinmeyen hata";
   if (message.includes("Fal API anahtarı")) return message;
+  if (message.includes("Boreal'in 20 saniye sınırına")) return message;
   if (/unauthorized|401|invalid.*key/i.test(message)) return "Fal API anahtarı geçersiz veya erişim yetkisi yok.";
   if (/moderation|flagged/i.test(message)) return "İçerik sağlayıcı tarafından reddedildi. Metni veya görseli değiştirin.";
   return "Video oluşturulurken hata oluştu. Lütfen yeniden deneyin.";

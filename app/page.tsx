@@ -56,7 +56,7 @@ export default function Home() {
   const [creatorPreview, setCreatorPreview] = useState("");
   const [script, setScript] = useState("");
   const kind = promptKind(script);
-  const [duration, setDuration] = useState<10 | 20 | 30>(20);
+  const [duration, setDuration] = useState<10 | 15 | 20>(20);
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -104,7 +104,7 @@ export default function Home() {
         const response = await fetch(`/api/jobs/${currentJob.id}`, { cache: "no-store" });
         const data = await response.json() as { job?: Job; warning?: string };
         if (cancelled) return;
-        if (data.warning) setWarning(data.warning);
+        setWarning(data.warning ?? "");
         if (data.job) {
           const updated = data.job;
           setCurrentJob(updated);
@@ -254,10 +254,10 @@ export default function Home() {
             <div className="form-section duration-section">
               <div className="section-title"><span className="step">4</span><div><h2>Tahmini üretim maliyeti</h2><p>Boreal 720p · Fal hesabına yansır. Müşteriye satış fiyatını sen belirlersin.</p></div></div>
               <div className="duration-options" role="group" aria-label="Hedef video süresi">
-                {([10, 20, 30] as const).map((seconds) => <button type="button" key={seconds} className={duration === seconds ? "selected" : ""} aria-pressed={duration === seconds} onClick={() => setDuration(seconds)}><strong>{seconds} sn</strong><span>≈ {dollars(priceCents(seconds))}</span></button>)}
+              {([10, 15, 20] as const).map((seconds) => <button type="button" key={seconds} className={duration === seconds ? "selected" : ""} aria-pressed={duration === seconds} onClick={() => setDuration(seconds)}><strong>{seconds} sn</strong><span>≈ {dollars(priceCents(seconds))}</span></button>)}
               </div>
               <div className="cost-detail"><strong>{duration} sn / 1 video için yaklaşık {dollars(priceCents(duration))}</strong><span>Boreal {dollars(duration)} + 1 başlangıç görseli {dollars(3.9)} + tahmini Türkçe ses {dollars(voiceCents)}</span></div>
-              <p className="cost-disclaimer">Bu ilk üretim tahminidir. Konuşma seçilen süreden uzun çıkarsa söz kesilmesin diye video uzar; her ek saniye yaklaşık 1 cent ekler. Yeniden denemeler ayrıca ücretlenir. <a href="https://fal.ai/models/creatify/boreal" target="_blank" rel="noreferrer">Boreal</a> · <a href="https://fal.ai/models/fal-ai/nano-banana/edit" target="_blank" rel="noreferrer">görsel</a> · <a href="https://fal.ai/models/fal-ai/elevenlabs/tts/eleven-v3" target="_blank" rel="noreferrer">ses</a></p>
+              <p className="cost-disclaimer">Bu ilk üretim tahminidir. Konuşma seçilen süreden uzun çıkarsa video en fazla 20 saniyeye uzayabilir; her ek saniye yaklaşık 1 cent ekler. Yeniden denemeler ayrıca ücretlenir. <a href="https://fal.ai/models/creatify/boreal" target="_blank" rel="noreferrer">Boreal</a> · <a href="https://fal.ai/models/fal-ai/nano-banana/edit" target="_blank" rel="noreferrer">görsel</a> · <a href="https://fal.ai/models/fal-ai/elevenlabs/tts/eleven-v3" target="_blank" rel="noreferrer">ses</a></p>
             </div>
 
             {needsLogin && <div className="inline-error">Video üretmek için <a href="/signin-with-chatgpt?return_to=/" target="_top">oturum aç</a>.</div>}
@@ -270,7 +270,7 @@ export default function Home() {
             <div className={`video-frame ${currentJob?.stage === "complete" ? "video-ready" : ""}`}>
               {currentJob?.stage === "complete" && currentJob.videoUrl ? <video key={currentJob.id} src={currentJob.videoUrl} controls playsInline poster={productPreview || undefined} /> : active ? <div className="frame-progress"><span className="progress-mark"><LoaderCircle size={28} className="spin" /></span><strong>{stageText[currentJob.stage] ?? "Video hazırlanıyor"}</strong><p>Bu sayfa açıkken adımlar sırayla tamamlanır. Daha sonra döndüğünde işlem kaldığı yerden devam eder.</p><div className="progress-track"><span /></div></div> : currentJob?.stage === "failed" ? <div className="frame-progress failed"><X size={27} /><strong>Video oluşturulamadı</strong><p>{currentJob.error ?? "Yeniden deneyin."}</p></div> : <div className="frame-empty"><div className="frame-art"><div className="frame-person">{creatorMode === "ready" && selectedCreator ? <img src={selectedCreator.image} alt="Seçilen model" /> : creatorMode === "custom" && creatorPreview ? <img src={creatorPreview} alt="Seçilen model" /> : <span>M</span>}</div><div className="frame-product">{productPreview ? <img src={productPreview} alt="Seçilen ürün" /> : <ImagePlus size={22} />}</div></div><div className="frame-caption"><span className="frame-caption-line" /><span className="frame-caption-line short" /></div><span className="preview-label">ÖNİZLEME</span></div>}
             </div>
-            {currentJob?.stage === "failed" && currentJob.canResume && <div className="resume-box"><p>Görsel hazır; ses isteğinin kaydı mevcut. Video isteği kaydedilmemiş. Hazır aşamalardan devam etmeyi seçebilirsin. Video için yaklaşık 1 cent/sn ücretlenir; konuşma uzunsa süre ve maliyet artabilir.</p><button type="button" className="generate-button" disabled={resuming} onClick={resumeJob}>{resuming ? "Hazırlanıyor..." : "Hazır aşamalardan videoyu oluştur"}</button></div>}
+            {currentJob?.stage === "failed" && currentJob.canResume && <div className="resume-box"><p>{currentJob.duration > 20 ? "Fal, 21 saniyelik video isteğini reddetti. Hazır görsel ve sesi yeniden kullanarak 20 saniyelik video isteği gönderebilirsin. Bu yeni video isteğinin tahmini maliyeti 20 centtir." : "Görsel ve ses hazır. Bunları yeniden üretmeden video aşamasına geçebilirsin. Video en fazla 20 saniye olabilir; maliyeti yaklaşık 1 cent/sn'dir."}</p><button type="button" className="generate-button" disabled={resuming} onClick={resumeJob}>{resuming ? "Hazırlanıyor..." : "Hazır dosyalarla 20 sn video oluştur"}</button></div>}
             {currentJob?.stage === "complete" && <a className="download-button" href={`/api/jobs/${currentJob.id}/video`}><ArrowDownToLine size={17} /> MP4 videoyu indir</a>}
             {warning && active && <p className="warning" role="status">{warning}</p>}
             <div className="result-note"><span className="note-icon"><Check size={16} /></span><p>Kişi ve ürün birlikte sahne referansı olarak kullanılır. Görünüm ve konuşma uyumu üretilen videoda kontrol edilmelidir.</p></div>

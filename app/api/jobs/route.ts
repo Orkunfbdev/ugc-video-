@@ -37,8 +37,8 @@ export async function POST(request: Request) {
   if ((!creator && !isCustom) || !validImage(creatorFile)) {
     return Response.json({ error: "Bir hazır model seçin veya geçerli bir kişi fotoğrafı yükleyin." }, { status: 400 });
   }
-  if (![10, 20, 30].includes(duration))
-    return Response.json({ error: "Geçerli video süresi seçin." }, { status: 400 });
+  if (![10, 15, 20].includes(duration))
+    return Response.json({ error: "Boreal tek çekimde en fazla 20 saniye üretiyor. 10, 15 veya 20 saniye seçin." }, { status: 400 });
   if (script.length < 12 || script.length > 5000)
     return Response.json({ error: "Prompt 12–5000 karakter olmalı." }, { status: 400 });
   let scenes: ReturnType<typeof parseStoryboard>["scenes"];

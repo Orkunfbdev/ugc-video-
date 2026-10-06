@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { getChatGPTUser } from "@/app/chatgpt-auth";
 import { getDb } from "@/db";
 import { jobs } from "@/db/schema";
-import { publicError } from "@/lib/fal";
+import { BOREAL_MODEL } from "@/lib/creators";
 import { advanceJob, safeJob } from "@/lib/job-pipeline";
 
 export const runtime = "edge";
@@ -19,7 +19,14 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     await advanceJob(job);
   } catch (error) {
     console.error("Status update failed", error);
-    return Response.json({ job: safeJob(job), warning: publicError(error) });
+    const status = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number"
+      ? `HTTP ${error.status}` : "bağlantı";
+    if (status === "HTTP 422" && job.model === BOREAL_MODEL && job.duration > 20) {
+      const [failed] = await db.update(jobs).set({ stage: "failed", error: "Boreal 20 saniyeyi aşan video isteğini reddetti. Hazır görsel ve sesle 20 saniye olarak devam edebilirsin.", updatedAt: new Date().toISOString() })
+        .where(and(eq(jobs.id, id), eq(jobs.stage, job.stage))).returning();
+      return Response.json({ job: safeJob(failed ?? job) });
+    }
+    return Response.json({ job: safeJob(job), warning: `Fal video sonucu şu anda okunamadı (${status}). Mevcut iş numarası: ${job.requestId}. Yeni üretim başlatmayın; bu iş sorgulanmaya devam ediyor.` });
   }
   const [updated] = await db.select().from(jobs).where(eq(jobs.id, id)).limit(1);
   return Response.json({ job: safeJob(updated) });

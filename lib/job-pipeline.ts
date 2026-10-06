@@ -115,7 +115,8 @@ export async function advanceJob(job: Job): Promise<void> {
         } catch { /* Fal file metadata is optional; use the text estimate below. */ }
       }
       const speechSeconds = audioBytes ? audioBytes / 16_000 : (scene.speech?.length ?? 0) / 12;
-      const actualDuration = Math.max(scene.duration, Math.ceil(speechSeconds + 1));
+      if (speechSeconds > 20) throw new Error("Konuşma Boreal'in 20 saniye sınırına sığmıyor. Video isteği gönderilmedi.");
+      const actualDuration = Math.min(20, Math.max(scene.duration, Math.ceil(speechSeconds + 0.25)));
       const fullScene = { ...scene, duration: actualDuration };
       // Keep the paid audio result even if the video submission fails.
       await db.update(jobs).set({ audioUrl, duration: actualDuration, updatedAt: now() })
@@ -244,7 +245,8 @@ export function safeJob(job: Job) {
     stage: job.stage,
     videoUrl: job.videoUrl,
     error: job.error,
-    canResume: job.stage === "failed" && job.provider === "boreal" && job.model === TTS_MODEL && !!job.avatarUrl,
+    canResume: job.stage === "failed" && job.provider === "boreal" && !!job.avatarUrl &&
+      (job.model === TTS_MODEL || (job.model === BOREAL_MODEL && !!job.audioUrl && job.duration > 20)),
     createdAt: job.createdAt,
   };
 }
