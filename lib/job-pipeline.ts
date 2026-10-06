@@ -84,7 +84,8 @@ export async function advanceJob(job: Job): Promise<void> {
   };
   const outputUrl = data.video?.url;
   const imageUrl = (result.data as { images?: { url?: string }[] }).images?.[0]?.url;
-  const audioUrl = (result.data as { audio?: { url?: string } }).audio?.url;
+  const audioFile = (result.data as { audio?: { url?: string; file_size?: number } }).audio;
+  const audioUrl = audioFile?.url;
   if (job.stage === "frame_queued" ? !imageUrl : ["tts_queued", "scene_tts_queued"].includes(job.stage) ? !audioUrl : !outputUrl) {
     await getDb().update(jobs).set({ stage: "failed", error: "Fal beklenen medya dosyasını döndürmedi.", updatedAt: now() })
       .where(and(eq(jobs.id, job.id), eq(jobs.stage, job.stage)));
@@ -105,15 +106,23 @@ export async function advanceJob(job: Job): Promise<void> {
     } else if (job.provider === "boreal" && job.stage === "scene_tts_queued") {
       const scene = (JSON.parse(job.scenePlan ?? "[]") as Scene[])[job.sceneIndex];
       if (!scene || !job.avatarUrl || !audioUrl) throw new Error("Sahne görseli veya Türkçe ses eksik.");
-      // Eleven v3 defaults to 128 kbps MP3; Boreal truncates driving audio at duration.
-      const speechFile = await fetch(audioUrl);
-      if (!speechFile.ok) throw new Error("Konuşmanın süresi doğrulanamadı; video aşaması başlatılmadı.");
-      const speechSeconds = (await speechFile.arrayBuffer()).byteLength / 16_000;
-      if (speechSeconds > scene.duration - 0.5)
-        throw new Error(`Konuşma ${scene.duration} saniyeye sığmıyor. Videoda söz kesilmemesi için metni biraz kısaltıp yeniden deneyin; video aşaması başlatılmadı.`);
-      const submitted = await fal.queue.submit(BOREAL_MODEL, { input: borealInput(scene, job.avatarUrl, audioUrl) });
+      // Eleven v3 defaults to 128 kbps MP3. Let the video finish the full speech instead of clipping it.
+      let audioBytes = audioFile?.file_size ?? 0;
+      if (!audioBytes) {
+        try {
+          const response = await fetch(audioUrl);
+          if (response.ok) audioBytes = (await response.arrayBuffer()).byteLength;
+        } catch { /* Fal file metadata is optional; use the text estimate below. */ }
+      }
+      const speechSeconds = audioBytes ? audioBytes / 16_000 : (scene.speech?.length ?? 0) / 12;
+      const actualDuration = Math.max(scene.duration, Math.ceil(speechSeconds + 1));
+      const fullScene = { ...scene, duration: actualDuration };
+      // Keep the paid audio result even if the video submission fails.
+      await db.update(jobs).set({ audioUrl, duration: actualDuration, updatedAt: now() })
+        .where(eq(jobs.id, job.id));
+      const submitted = await fal.queue.submit(BOREAL_MODEL, { input: borealInput(fullScene, job.avatarUrl, audioUrl) });
       await db.update(jobs).set({ stage: "scene_queued", model: BOREAL_MODEL, requestId: submitted.request_id,
-        audioUrl, updatedAt: now() }).where(eq(jobs.id, job.id));
+        scenePlan: JSON.stringify([fullScene]), updatedAt: now() }).where(eq(jobs.id, job.id));
     } else if (job.provider === "boreal" && job.stage === "scene_queued") {
       await afterBorealScene(job, outputUrl!, fal);
     } else if (job.stage === "frame_queued") {
@@ -199,6 +208,7 @@ export async function advanceJob(job: Job): Promise<void> {
       await finishJob(job.id, outputUrl!);
     }
   } catch (error) {
+    console.error("Job step failed", { jobId: job.id, stage: job.stage, model: job.model, error });
     await db.update(jobs).set({ stage: "failed", error: publicError(error), updatedAt: now() })
       .where(eq(jobs.id, job.id));
   }
@@ -234,6 +244,7 @@ export function safeJob(job: Job) {
     stage: job.stage,
     videoUrl: job.videoUrl,
     error: job.error,
+    canResume: job.stage === "failed" && job.provider === "boreal" && job.model === TTS_MODEL && !!job.avatarUrl,
     createdAt: job.createdAt,
   };
 }
