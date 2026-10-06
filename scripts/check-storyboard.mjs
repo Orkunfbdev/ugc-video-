@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { borealInput, openingFramePrompt, parseTalking, parseStoryboard, promptKind } from "../lib/storyboard.ts";
+import { borealInput, continuousScene, openingFramePrompt, parseTalking, parseStoryboard, promptKind } from "../lib/storyboard.ts";
 
 const example = `Sahne 1: Kanca (0 - 7. Saniye)
 Prompt: A woman in a kitchen holds the real product toward the camera.
@@ -13,6 +13,16 @@ Konuşma Metni
 (14-20): "Siz de deneyin."`;
 
 const plan = parseStoryboard(example, 20);
+const continuous = continuousScene(plan);
+assert.equal(continuous.duration, 20);
+assert.equal(continuousScene(parseStoryboard(example, 30)).duration, 30);
+assert.equal(continuous.speech, plan.voiceover);
+assert.match(continuous.prompt, /0-7s:/);
+assert.match(continuous.prompt, /14-20s:/);
+assert.match(openingFramePrompt(continuous), /woman in a kitchen holds the real product/);
+assert.doesNotMatch(openingFramePrompt(continuous), /Extreme close-up/);
+assert.match(borealInput(continuous, "image", "audio").prompt, /one uninterrupted performance/);
+assert.match(borealInput(continuous, "image", "audio").prompt, /no edits, cuts, resets/);
 assert.equal(promptKind(example), "storyboard");
 assert.equal(promptKind("Bu ürünü her gün kullanıyorum, size de öneririm."), "talking");
 const decorated = `🎬 AI Video Üretim Promptları\n${example.replace("Konuşma Metni", "🎙️ Konuşma Metni (Voiceover / Dış Ses)")}`;

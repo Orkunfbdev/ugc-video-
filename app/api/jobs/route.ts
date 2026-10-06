@@ -6,7 +6,7 @@ import { jobs } from "@/db/schema";
 import { creators, FRAME_MODEL } from "@/lib/creators";
 import { falClient, publicError, validImage } from "@/lib/fal";
 import { safeJob } from "@/lib/job-pipeline";
-import { openingFramePrompt, parseTalking, parseStoryboard, promptKind } from "@/lib/storyboard";
+import { continuousScene, openingFramePrompt, parseTalking, parseStoryboard, promptKind } from "@/lib/storyboard";
 
 export const runtime = "edge";
 
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "Prompt 12–5000 karakter olmalı." }, { status: 400 });
   let scenes: ReturnType<typeof parseStoryboard>["scenes"];
   try {
-    scenes = kind === "storyboard" ? parseStoryboard(script, duration).scenes : [parseTalking(script, duration)];
+    scenes = kind === "storyboard" ? [continuousScene(parseStoryboard(script, duration))] : [parseTalking(script, duration)];
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Metin geçersiz." }, { status: 400 });
   }
