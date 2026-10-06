@@ -18,6 +18,35 @@ async function claim(job: Job, nextStage: string) {
   return changed.length > 0;
 }
 
+async function afterScene(job: Job, sceneUrl: string, fal: ReturnType<typeof falClient>) {
+  const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
+  const urls = [...JSON.parse(job.sceneVideoUrls ?? "[]") as string[], sceneUrl];
+  const nextIndex = job.sceneIndex + 1;
+  if (nextIndex < scenes.length) {
+    if (!job.creatorImageUrl) throw new Error("Model fotoğrafı kayıp.");
+    const submitted = await fal.queue.submit(FRAME_MODEL, { input: {
+      image_urls: [job.creatorImageUrl, job.productImageUrl],
+      prompt: `Create a photorealistic vertical 9:16 opening frame for the next shot of the same product ad. Image 1 is the person; preserve their identity and facial features. Image 2 is the actual product; preserve its shape, colors and any readable branding. Do not invent extra products or misleading labels. Scene: ${scenes[nextIndex].prompt}`,
+      aspect_ratio: "9:16", num_images: 1, output_format: "png",
+    } });
+    await getDb().update(jobs).set({ stage: "frame_queued", model: FRAME_MODEL, requestId: submitted.request_id,
+      sceneIndex: nextIndex, sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+  } else if (scenes.every((scene) => scene.speech)) {
+    const submitted = await fal.queue.submit(MERGE_MODEL, { input: {
+      video_urls: urls, resolution: "portrait_16_9",
+    } });
+    await getDb().update(jobs).set({ stage: "merge_queued", model: MERGE_MODEL, requestId: submitted.request_id,
+      sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+  } else {
+    if (!job.voiceover) throw new Error("Dış ses metni eksik.");
+    const submitted = await fal.queue.submit(TTS_MODEL, { input: {
+      text: job.voiceover, voice: "Aria", language_code: "tr", speed: 1.15,
+    } });
+    await getDb().update(jobs).set({ stage: "tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
+      sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+  }
+}
+
 export async function advanceJob(job: Job): Promise<void> {
   if (!job.stage.endsWith("_queued")) return;
   const fal = falClient();
@@ -34,7 +63,7 @@ export async function advanceJob(job: Job): Promise<void> {
   const outputUrl = data.video?.url;
   const imageUrl = (result.data as { images?: { url?: string }[] }).images?.[0]?.url;
   const audioUrl = (result.data as { audio?: { url?: string } }).audio?.url;
-  if (job.stage === "frame_queued" ? !imageUrl : job.stage === "tts_queued" ? !audioUrl : !outputUrl) {
+  if (job.stage === "frame_queued" ? !imageUrl : ["tts_queued", "scene_tts_queued"].includes(job.stage) ? !audioUrl : !outputUrl) {
     await getDb().update(jobs).set({ stage: "failed", error: "Fal beklenen medya dosyasını döndürmedi.", updatedAt: now() })
       .where(and(eq(jobs.id, job.id), eq(jobs.stage, job.stage)));
     return;
@@ -57,25 +86,25 @@ export async function advanceJob(job: Job): Promise<void> {
         .where(eq(jobs.id, job.id));
     } else if (job.stage === "scene_queued") {
       const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
-      const urls = [...JSON.parse(job.sceneVideoUrls ?? "[]") as string[], outputUrl!];
-      const nextIndex = job.sceneIndex + 1;
-      if (nextIndex < scenes.length) {
-        if (!job.creatorImageUrl) throw new Error("Model fotoğrafı kayıp.");
-        const submitted = await fal.queue.submit(FRAME_MODEL, { input: {
-          image_urls: [job.creatorImageUrl, job.productImageUrl],
-          prompt: `Create a photorealistic vertical 9:16 opening frame for the next shot of the same product ad. Image 1 is the person; preserve their identity and facial features. Image 2 is the actual product; preserve its shape, colors and any readable branding. Do not invent extra products or misleading labels. Scene: ${scenes[nextIndex].prompt}`,
-          aspect_ratio: "9:16", num_images: 1, output_format: "png",
-        } });
-        await db.update(jobs).set({ stage: "frame_queued", model: FRAME_MODEL, requestId: submitted.request_id,
-          sceneIndex: nextIndex, sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
-      } else {
-        if (!job.voiceover) throw new Error("Dış ses metni eksik.");
+      const scene = scenes[job.sceneIndex];
+      if (scene?.speech) {
         const submitted = await fal.queue.submit(TTS_MODEL, { input: {
-          text: job.voiceover, voice: "Aria", language_code: "tr", speed: 1.15,
+          text: scene.speech, voice: "Aria", language_code: "tr", speed: 1.15,
         } });
-        await db.update(jobs).set({ stage: "tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
-          sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
+        await db.update(jobs).set({ stage: "scene_tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
+          avatarUrl: outputUrl, updatedAt: now() }).where(eq(jobs.id, job.id));
+      } else {
+        await afterScene(job, outputUrl!, fal);
       }
+    } else if (job.stage === "scene_tts_queued") {
+      if (!job.avatarUrl || !audioUrl) throw new Error("Sahne videosu veya konuşma sesi kayıp.");
+      const submitted = await fal.queue.submit(AUDIO_MERGE_MODEL, { input: {
+        video_url: job.avatarUrl, audio_url: audioUrl,
+      } });
+      await db.update(jobs).set({ stage: "scene_audio_merge_queued", model: AUDIO_MERGE_MODEL,
+        requestId: submitted.request_id, updatedAt: now() }).where(eq(jobs.id, job.id));
+    } else if (job.stage === "scene_audio_merge_queued") {
+      await afterScene(job, outputUrl!, fal);
     } else if (job.stage === "tts_queued") {
       const urls = JSON.parse(job.sceneVideoUrls ?? "[]") as string[];
       if (!urls.length || !audioUrl) throw new Error("Sahneler veya dış ses kayıp.");
@@ -108,6 +137,11 @@ export async function advanceJob(job: Job): Promise<void> {
       }).where(eq(jobs.id, job.id));
     } else if (job.stage === "merge_queued") {
       if (job.kind === "storyboard") {
+        const scenes = JSON.parse(job.scenePlan ?? "[]") as Scene[];
+        if (scenes.length && scenes.every((scene) => scene.speech)) {
+          await finishJob(job.id, outputUrl!);
+          return;
+        }
         if (!job.audioUrl) throw new Error("Dış ses dosyası kayıp.");
         const submitted = await fal.queue.submit(AUDIO_MERGE_MODEL, { input: {
           video_url: outputUrl!, audio_url: job.audioUrl,

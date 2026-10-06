@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDownToLine, ArrowRight, Check, ChevronRight, CircleHelp, ImagePlus, LoaderCircle, Mic2, Play, Plus, Sparkles, UploadCloud, X } from "lucide-react";
 import { creators } from "@/lib/creators";
-import { maxVoiceWords, wordCount } from "@/lib/storyboard";
+import { countSceneHeadings, maxVoiceWords, parseStoryboard, promptKind, wordCount } from "@/lib/storyboard";
 
 type Job = {
   id: string;
@@ -30,6 +30,10 @@ const stageText: Record<string, string> = {
   frame_submitting: "Sahne videosu başlatılıyor",
   scene_queued: "Sahne videosu oluşturuluyor",
   scene_submitting: "Sonraki sahne hazırlanıyor",
+  scene_tts_queued: "Sahnenin konuşması hazırlanıyor",
+  scene_tts_submitting: "Konuşma sahneye ekleniyor",
+  scene_audio_merge_queued: "Konuşma sahneye ekleniyor",
+  scene_audio_merge_submitting: "Sonraki sahne hazırlanıyor",
   tts_queued: "Türkçe dış ses hazırlanıyor",
   tts_submitting: "Sahneler birleştiriliyor",
   audio_merge_queued: "Dış ses videoya ekleniyor",
@@ -70,10 +74,8 @@ export default function Home() {
   const [creatorMode, setCreatorMode] = useState<"ready" | "custom">("ready");
   const [creatorImage, setCreatorImage] = useState<File | null>(null);
   const [creatorPreview, setCreatorPreview] = useState("");
-  const [talkingScript, setTalkingScript] = useState("");
-  const [storyboardScript, setStoryboardScript] = useState("");
-  const [kind, setKind] = useState<"talking" | "storyboard">("talking");
-  const script = kind === "storyboard" ? storyboardScript : talkingScript;
+  const [script, setScript] = useState("");
+  const kind = promptKind(script);
   const [duration, setDuration] = useState<10 | 20 | 30>(20);
   const [currentJob, setCurrentJob] = useState<Job | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -152,16 +154,19 @@ export default function Home() {
     if (creatorMode === "custom" && !creatorImage) { setError("Kendi modeliniz için kişi fotoğrafını yükleyin."); return; }
     if (script.trim().length < 12) { setError("Video metnini yazın (en az 12 karakter)."); return; }
     if (kind === "talking" && wordCount(script) > maxVoiceWords(duration)) { setError(`${duration} saniyelik hedefe en fazla ${maxVoiceWords(duration)} kelime önerilir.`); return; }
+    if (kind === "storyboard") {
+      try { parseStoryboard(script, duration); }
+      catch (cause) { setError(cause instanceof Error ? cause.message : "Sahne metnini kontrol edin."); return; }
+    }
     setSubmitting(true);
     try {
       const form = new FormData();
       form.set("productImage", kind === "storyboard" ? product : await productCard(product));
-      form.set("creatorId", creatorMode === "custom" ? "custom" : creatorId);
+      form.set("creatorId", creatorMode === "custom" ? "custom" : effectiveCreatorId);
       form.set("script", script.trim());
-      form.set("kind", kind);
       form.set("duration", String(duration));
       if (creatorMode === "custom" && creatorImage) form.set("creatorImage", creatorImage);
-      if (creatorMode === "ready" && creatorId === "featured") {
+      if (creatorMode === "ready" && effectiveCreatorId === "featured") {
         const response = await fetch("/models/featured.jpg");
         if (!response.ok) throw new Error("Hazır model fotoğrafı yüklenemedi.");
         form.set("creatorImage", new File([await response.blob()], "featured.jpg", { type: "image/jpeg" }));
@@ -171,7 +176,7 @@ export default function Home() {
       if (response.status === 401) setNeedsLogin(true);
       if (!response.ok) throw new Error(data.error ?? "Üretim başlatılamadı.");
       if (!data.job) throw new Error("Üretim isteği doğrulanamadı.");
-      const nextJob = { id: data.job.id, creatorId: creatorMode === "custom" ? "custom" : creatorId, script, kind, duration, sceneIndex: 0, sceneCount: kind === "storyboard" ? sceneCount : 0, stage: data.job.stage, videoUrl: null, error: null, createdAt: new Date().toISOString() };
+      const nextJob = { id: data.job.id, creatorId: creatorMode === "custom" ? "custom" : effectiveCreatorId, script, kind, duration, sceneIndex: 0, sceneCount: kind === "storyboard" ? sceneCount : 0, stage: data.job.stage, videoUrl: null, error: null, createdAt: new Date().toISOString() };
       setCurrentJob(nextJob);
       setJobs((previous) => [nextJob, ...previous]);
     } catch (cause) {
@@ -181,10 +186,11 @@ export default function Home() {
     }
   }
 
-  const selectedCreator = creators.find((creator) => creator.id === creatorId);
+  const effectiveCreatorId = kind === "storyboard" && creatorMode === "ready" && creators.find((creator) => creator.id === creatorId)?.kind === "argil" ? "featured" : creatorId;
+  const selectedCreator = creators.find((creator) => creator.id === effectiveCreatorId);
   const active = currentJob && !["complete", "failed"].includes(currentJob.stage);
   const isArgil = creatorMode === "ready" && selectedCreator?.kind === "argil";
-  const sceneCount = Math.min(3, Math.max(2, script.match(/^\s*Sahne\s+\d+/gim)?.length ?? (duration === 10 ? 2 : 3)));
+  const sceneCount = Math.min(3, Math.max(2, countSceneHeadings(script) || (duration === 10 ? 2 : 3)));
   const priceCents = (seconds: number) => kind === "storyboard"
     ? seconds * 8.4 + (script ? sceneCount : seconds === 10 ? 2 : 3) * 3.9 + seconds * 0.14
     : seconds * (isArgil ? 2.25 : 10);
@@ -223,10 +229,10 @@ export default function Home() {
                 <button type="button" role="tab" aria-selected={creatorMode === "custom"} className={creatorMode === "custom" ? "selected" : ""} onClick={() => setCreatorMode("custom")}><UploadCloud size={17} /> Kendi fotoğrafım</button>
               </div>
               {creatorMode === "ready" ? <div className="creator-grid">
-                {creators.map((creator) => <button type="button" key={creator.id} disabled={kind === "storyboard" && creator.kind === "argil"} className={`creator-card ${creatorId === creator.id ? "chosen" : ""}`} onClick={() => setCreatorId(creator.id)} aria-pressed={creatorId === creator.id}>
+                {creators.map((creator) => <button type="button" key={creator.id} disabled={kind === "storyboard" && creator.kind === "argil"} className={`creator-card ${effectiveCreatorId === creator.id ? "chosen" : ""}`} onClick={() => setCreatorId(creator.id)} aria-pressed={effectiveCreatorId === creator.id}>
                   <span className={`creator-thumb creator-${creator.id}`}>{"image" in creator ? <img src={creator.image} alt="" /> : <span>{creator.name.slice(0, 1)}</span>}</span>
-                  <span className="creator-meta"><strong>{creator.name}</strong><small>{creator.description}</small></span>
-                  <span className="creator-check">{creatorId === creator.id ? <Check size={14} /> : <Plus size={13} />}</span>
+                  <span className="creator-meta"><strong>{creator.name}</strong><small>{kind === "storyboard" && creator.kind === "photo" ? "Kling · sahne referansı" : creator.description}</small></span>
+                  <span className="creator-check">{effectiveCreatorId === creator.id ? <Check size={14} /> : <Plus size={13} />}</span>
                 </button>)}
               </div> : <div className="own-creator">
                 <input ref={creatorInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Kendi model fotoğrafını seç" onChange={(event) => useImage(event.target.files?.[0], "creator")} />
@@ -234,21 +240,17 @@ export default function Home() {
                   {creatorPreview ? <img src={creatorPreview} alt="Yüklenen model" /> : <span className="own-upload-icon"><ImagePlus size={26} /></span>}
                   <span><strong>{creatorImage ? creatorImage.name : "Kişi fotoğrafı yükle"}</strong><small>Yüzü net görünen bir fotoğraf seç · en fazla 8 MB</small></span><ChevronRight size={18} />
                 </button>
-                <p className="hint"><CircleHelp size={15} /> Kendi fotoğrafın HeyGen ile konuşan videoya dönüşür (0,10 $/sn). Argil yalnızca hazır avatarları destekler. Ürün fotoğrafı ayrıca gösterilir.</p>
+                <p className="hint"><CircleHelp size={15} /> {kind === "storyboard" ? "Kendi fotoğrafın sahneli videoda referans alınır." : "Kendi fotoğrafın HeyGen ile konuşan videoya dönüşür (0,10 $/sn). Argil yalnızca hazır avatarları destekler. Ürün fotoğrafı ayrıca gösterilir."}</p>
               </div>}
-              {kind === "storyboard" && <p className="hint"><CircleHelp size={15} /> Sahneli reklam Kling kullanır. Argil hazır avatarları yalnızca konuşma modunda kullanılabilir.</p>}
+              {kind === "storyboard" && <p className="hint"><CircleHelp size={15} /> {creatorMode === "ready" && effectiveCreatorId !== creatorId ? "Sahneli prompt algılandı: Argil yerine stüdyo fotoğrafı otomatik seçildi. " : ""}Sahneli reklam Kling kullanır; Argil hazır avatarları yalnızca düz konuşma metninde kullanılabilir.</p>}
             </div>
 
             <div className="form-section script-section">
-              <div className="section-title"><span className="step">3</span><div><h2>Video biçimi ve metni</h2><p>Kısa konuşma veya sahne sahne ürün reklamı oluştur.</p></div></div>
-              <div className="mode-tabs" role="tablist" aria-label="Video biçimi">
-                <button type="button" role="tab" aria-selected={kind === "talking"} className={kind === "talking" ? "selected" : ""} onClick={() => setKind("talking")}><Mic2 size={17} /> Konuşan model</button>
-                <button type="button" role="tab" aria-selected={kind === "storyboard"} className={kind === "storyboard" ? "selected" : ""} onClick={() => { setKind("storyboard"); if (isArgil) setCreatorId("featured"); }}><Play size={16} /> Sahneli reklam</button>
-              </div>
-              <label htmlFor="script" className="field-label">{kind === "storyboard" ? "Sahne tarifleri ve konuşma metni" : "Konuşma metni"}</label>
-              <textarea id="script" className={kind === "storyboard" ? "storyboard-textarea" : ""} maxLength={kind === "storyboard" ? 5000 : 500} value={script} onChange={(event) => kind === "storyboard" ? setStoryboardScript(event.target.value) : setTalkingScript(event.target.value)} placeholder={kind === "storyboard" ? "Sahne 1: Kanca (0 - 7. saniye)\nPrompt: Model kameraya bakar ve ürünü gösterir...\n\nSahne 2: Ürün kullanımı (7 - 14. saniye)\nPrompt: Ürünün yakın çekimi...\n\nSahne 3: Kapanış (14 - 20. saniye)\nPrompt: Model ürünle gülümser, sakin kapanış...\n\nKonuşma Metni\n(0-7. saniye): \"...\"\n(7-14. saniye): \"...\"\n(14-20. saniye): \"...\"" : "Örneğin: Bu ürünü son birkaç haftadır kullanıyorum. En sevdiğim yanı..."} />
-              <div className="textarea-footer"><span><Mic2 size={15} /> {kind === "storyboard" ? "2–3 sahne; Konuşma Metni başlığıyla Türkçe dış sesi ekle" : "Türkçe metin yazabilirsin"}</span><span>{script.length}/{kind === "storyboard" ? 5000 : 500}</span></div>
-              {kind === "storyboard" && <p className="hint">Örneğindeki “Sahne 1 / Prompt / Konuşma Metni” düzenini doğrudan yapıştırabilirsin. Son sahne sakin bir ürün kapanışıyla biter. Dış ses, sahnelerle yaklaşık eşleşir; dudak senkronu bu modda yoktur.</p>}
+              <div className="section-title"><span className="step">3</span><div><h2>Video promptu</h2><p>Konuşma metnini veya sahneleri ve konuşmaları tek kutuya yapıştır.</p></div></div>
+              <label htmlFor="script" className="field-label">Prompt ve konuşma metni</label>
+              <textarea id="script" className="storyboard-textarea" maxLength={5000} value={script} onChange={(event) => setScript(event.target.value)} placeholder={'Kısa video için yalnızca modelin söyleyeceği metni yaz.\n\nSahneli video için:\nSahne 1: Model ürünü kameraya gösterir.\nPrompt: Model mutfakta ürünü elinde tutar...\n\nSahne 2: Ürün yakın çekimde kullanılır.\nPrompt: Ürünün kullanım anı...\n\nKonuşma Metni\nSahne 1: "İlk konuşma cümlesi."\nSahne 2: "İkinci konuşma cümlesi."'} />
+              <div className="textarea-footer"><span><Mic2 size={15} /> {kind === "storyboard" ? `${sceneCount} sahneli video algılandı · konuşmalar sahnelere ayrı eklenir` : "Düz metin konuşan modele verilir; Sahne 1, Sahne 2 yazarsan sahneli video seçilir"}</span><span>{script.length}/5000</span></div>
+              {kind === "storyboard" && <p className="hint">Her sahne için Konuşma Metni bölümünde sırayla bir cümle yaz. Sözler ilgili sahneye eklenir; sahneli videoda dudak senkronu yoktur. Metin seçtiğin süreye sığmalıdır.</p>}
             </div>
 
             <div className="form-section duration-section">

@@ -6,7 +6,7 @@ import { jobs } from "@/db/schema";
 import { ARGIL_MODEL, creators, FRAME_MODEL, HEYGEN_MODEL } from "@/lib/creators";
 import { falClient, publicError, validImage } from "@/lib/fal";
 import { safeJob } from "@/lib/job-pipeline";
-import { maxVoiceWords, parseStoryboard, wordCount } from "@/lib/storyboard";
+import { maxVoiceWords, parseStoryboard, promptKind, wordCount } from "@/lib/storyboard";
 
 export const runtime = "edge";
 
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const script = String(form.get("script") ?? "").trim();
-  const kind = String(form.get("kind") ?? "talking");
+  const kind = promptKind(script);
   const duration = Number(form.get("duration") ?? 20);
   const creatorId = String(form.get("creatorId") ?? "");
   const creator = creators.find((item) => item.id === creatorId);
@@ -37,10 +37,10 @@ export async function POST(request: Request) {
   if ((!creator && !isCustom) || ((isCustom || creator?.kind === "photo") && !validImage(creatorFile))) {
     return Response.json({ error: "Bir hazır model seçin veya geçerli bir kişi fotoğrafı yükleyin." }, { status: 400 });
   }
-  if (![10, 20, 30].includes(duration) || !["talking", "storyboard"].includes(kind))
-    return Response.json({ error: "Geçerli üretim yöntemi ve süre seçin." }, { status: 400 });
-  if (script.length < 12 || script.length > (kind === "storyboard" ? 5000 : 500))
-    return Response.json({ error: kind === "storyboard" ? "Sahneli metin 12–5000 karakter olmalı." : "Konuşma metni 12–500 karakter olmalı." }, { status: 400 });
+  if (![10, 20, 30].includes(duration))
+    return Response.json({ error: "Geçerli video süresi seçin." }, { status: 400 });
+  if (script.length < 12 || script.length > 5000)
+    return Response.json({ error: "Prompt 12–5000 karakter olmalı." }, { status: 400 });
   if (kind === "storyboard" && creator?.kind === "argil")
     return Response.json({ error: "Sahneli reklam için fotoğraflı bir model seçin." }, { status: 400 });
   let storyboard: ReturnType<typeof parseStoryboard> | null = null;
