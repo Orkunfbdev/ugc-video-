@@ -40,7 +40,7 @@ async function afterScene(job: Job, sceneUrl: string, fal: ReturnType<typeof fal
   } else {
     if (!job.voiceover) throw new Error("Dış ses metni eksik.");
     const submitted = await fal.queue.submit(TTS_MODEL, { input: {
-      text: job.voiceover, voice: "Aria", language_code: "tr", speed: 1.15,
+      text: job.voiceover, voice: "Sarah", language_code: "tr", stability: 0.45,
     } });
     await getDb().update(jobs).set({ stage: "tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
       sceneVideoUrls: JSON.stringify(urls), updatedAt: now() }).where(eq(jobs.id, job.id));
@@ -98,7 +98,7 @@ export async function advanceJob(job: Job): Promise<void> {
       const scene = (JSON.parse(job.scenePlan ?? "[]") as Scene[])[job.sceneIndex];
       if (!scene?.speech || !imageUrl) throw new Error("Sahne konuşması veya görseli eksik.");
       const submitted = await fal.queue.submit(TTS_MODEL, { input: {
-        text: scene.speech, voice: "Aria", language_code: "tr", speed: 1,
+        text: scene.speech, voice: "Sarah", language_code: "tr", stability: 0.45,
       } });
       await db.update(jobs).set({ stage: "scene_tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
         avatarUrl: imageUrl, updatedAt: now() }).where(eq(jobs.id, job.id));
@@ -127,7 +127,7 @@ export async function advanceJob(job: Job): Promise<void> {
       const scene = scenes[job.sceneIndex];
       if (scene?.speech) {
         const submitted = await fal.queue.submit(TTS_MODEL, { input: {
-          text: scene.speech, voice: "Aria", language_code: "tr", speed: 1.15,
+          text: scene.speech, voice: "Sarah", language_code: "tr", stability: 0.45,
         } });
         await db.update(jobs).set({ stage: "scene_tts_queued", model: TTS_MODEL, requestId: submitted.request_id,
           avatarUrl: outputUrl, updatedAt: now() }).where(eq(jobs.id, job.id));

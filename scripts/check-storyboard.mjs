@@ -31,5 +31,8 @@ assert.match(openingFramePrompt({ prompt: "Extreme close-up of the bottle", dura
 assert.deepEqual(Object.keys(borealInput(talking, "image", "audio")), ["image_url", "audio_url", "prompt", "resolution", "aspect_ratio", "duration"]);
 assert.match(borealInput(talking, "image", "audio").prompt, /on-camera person speaks/);
 assert.match(borealInput({ prompt: "Macro product shot", duration: 7 }, "image", "audio").prompt, /voiceover/);
+assert.match(borealInput({ prompt: "Olive oil pouring onto bread", duration: 7 }, "image", "audio").prompt, /Stop pouring/);
+assert.match(borealInput({ prompt: "Reaction after tasting", duration: 6 }, "image", "audio").prompt, /take one small bite/);
+assert.match(openingFramePrompt({ prompt: "Olive oil pouring onto bread", duration: 7 }), /counter is clean and dry/);
 assert.equal(parseTalking('Prompt: A woman holds the bottle.\nKonuşma Metni: "Bu ürünü seviyorum."', 10).speech, "Bu ürünü seviyorum.");
 console.log("Storyboard checks passed");

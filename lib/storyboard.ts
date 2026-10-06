@@ -39,14 +39,22 @@ export function parseTalking(input: string, duration: number): Scene {
 
 export function openingFramePrompt(scene: Scene) {
   const closeup = /close[ -]?up|macro|b-?roll|yakın çekim/i.test(scene.prompt);
-  return `Create a photorealistic vertical 9:16 smartphone UGC opening frame. Image 1 is the person; preserve their identity and face when visible. Image 2 is the actual product; preserve its shape, colors and readable label. ${closeup ? "For this product close-up, focus on the real product in use; the person's face need not appear." : "Show the person naturally holding the exact product in hand, with both face and product clearly visible."} Natural daylight, realistic hands, no invented text or extra products. Scene: ${scene.prompt}`;
+  const pouring = /pour|drizzl|dök|akış/i.test(scene.prompt);
+  return `Create a photorealistic vertical 9:16 smartphone UGC opening frame. Image 1 is the person; preserve their identity and face when visible. Image 2 is the actual product and is the source of truth for the bottle, cap, label, logo, colors and printed brand. Copy its visible branding faithfully; never redesign or respell it. ${closeup ? "For this product close-up, focus on the real product in use; the person's face need not appear." : "Show the person naturally holding the exact product in hand, with both face and product clearly visible."} ${pouring ? "Start with the bottle above bread on a small plate, before the brief drizzle; the counter is clean and dry." : ""} Natural daylight, realistic hands, no invented text or extra products. Scene: ${scene.prompt}`;
 }
 
 export function borealInput(scene: Scene, imageUrl: string, audioUrl: string) {
   const closeup = /close[ -]?up|macro|b-?roll|yakın çekim/i.test(scene.prompt);
+  const pouring = /pour|drizzl|dök|akış/i.test(scene.prompt);
+  const tasting = /tast|tatt|tadım|tadına|tepki/i.test(scene.prompt);
+  const action = pouring
+    ? "Show one small drizzle onto bread on a plate for about one second. Stop pouring, turn the bottle upright, then hold a clean appetizing close-up of the bread and intact bottle for the rest of the shot. Keep oil on the bread and plate; no puddles or spill on the counter."
+    : tasting
+      ? "At the start, take one small bite of the prepared bread, then show a genuine pleased reaction. Finish chewing, smile toward the camera and point to the actual bottle with its label facing forward. Hold a steady product view through the final second."
+      : "Use relaxed, small hand gestures and keep the actual product in view. Complete each gesture before the cut.";
   return {
     image_url: imageUrl, audio_url: audioUrl,
-    prompt: `[VISUAL] ${scene.prompt}\nPhotorealistic handheld 9:16 smartphone UGC video. Preserve the reference person's identity and exact product appearance, label and colors. Natural movements and daylight. Finish with a settled frame, no abrupt gesture.\n[SPEECH] ${closeup ? "Use the supplied Turkish audio as voiceover. No person needs to speak on screen." : "The on-camera person speaks the supplied Turkish audio with natural synchronized mouth movement. Do not translate or invent words."}\n[SOUNDS] Keep the supplied audio clear. No extra music.\n[TEXT] None.`,
+    prompt: `[VISUAL] Photorealistic handheld 9:16 smartphone UGC video. The reference image is the source of truth for the person's identity and the actual product's shape, colors, cap, label and printed brand. Preserve the original label; never replace letters, invent a logo or add another product. ${action} Natural daylight and subtle camera movement. Finish with a settled frame, no abrupt gesture. Scene brief: ${scene.prompt}\n[SPEECH] ${closeup || tasting ? "Use the supplied Turkish audio as voiceover. No person needs to speak on screen or move their mouth while eating." : "The on-camera person speaks the supplied Turkish audio with natural synchronized mouth movement. Do not translate or invent words."}\n[SOUNDS] Keep the supplied speech clear, with quiet natural room tone during pauses and after the final word. No music.\n[TEXT] No captions, overlays or new text. Keep only the original product label.`,
     resolution: "720p", aspect_ratio: "9:16", duration: scene.duration,
   };
 }
